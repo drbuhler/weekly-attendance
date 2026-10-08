@@ -37,6 +37,7 @@ const CFG = {
   HISTORY: 'History',
   ARCHIVE: 'Archive',
   NAME_CHECK: 'Name check',
+  FIRST_WEEKLY_TAB: '2026-08-09', // older "Mon D" tabs (e.g. the 'May 17' master grid, summer tabs) are left alone
   HIDE_AFTER_WEEKS: 6,     // tabs this many weeks old (or older) are copied to History, then hidden
   KEEP_HISTORY_WEEKS: 26,  // History rows older than this are trimmed
   REASONS: ['Baptized', 'Chrismated', 'Washed out', 'Moved', 'Other'],
@@ -330,7 +331,7 @@ function datedTabs_(ss) {
   return ss.getSheets().map((sheet) => {
     const d = tabDateNear(sheet.getName(), today);
     return d ? { sheet, iso: isoOf_(d) } : null;
-  }).filter(Boolean).sort((a, b) => (a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0));
+  }).filter((t) => t && t.iso >= CFG.FIRST_WEEKLY_TAB).sort((a, b) => (a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0));
 }
 
 /* one weekly tab -> {main: Map(key -> {name, checked, baptized}), checkedNew: Set(keys), newNames: [name]} */

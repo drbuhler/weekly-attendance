@@ -41,6 +41,8 @@ def main():
     ap.add_argument("--archive-csv", help="inject an Archive tab with this CSV (normal/history scenarios)")
     ap.add_argument("--blur", action="store_true", help="blur every name in screenshots")
     ap.add_argument("--full", action="store_true", help="full-page unlocked screenshot (Name check open)")
+    ap.add_argument("--probe", help="report the last-attended texts shown for this one name (the name itself is not printed)")
+    ap.add_argument("--crop-last", action="store_true", help="also save an UNblurred crop of only the Red table's 'Last attended' column")
     ap.add_argument("--now")
     ap.add_argument("--width", type=int, default=1280)
     ap.add_argument("--index")
@@ -161,6 +163,23 @@ def main():
                              "marked_baptized": s.get("markedBaptized"), "left_list": s.get("leftList"), "name_check": s.get("nameCheck"),
                              "came_back": s.get("cameBack"), "archive": s.get("archive"),
                              "weekly_attended": [f"{x['present']}/{x['onSheet']}" for x in w]}
+            res["last_seen"] = {k: s.get(k) for k in ("olderRecord", "lastSeenOlder", "neverAnywhere", "redNever", "redLastSeenOlder")}
+            res["red_table_last_texts"] = page.evaluate("""(() => { const c = {}; document.querySelectorAll('.panel.red tbody tr td:nth-child(2)')
+                .forEach(td => { const t = td.textContent.trim(); const k = t === 'never' ? 'never' : t.startsWith('Last seen') ? 'Last seen <Mon YYYY>' : '<Mon D> (in window)'; c[k] = (c[k] || 0) + 1; }); return c; })()""")
+            if args.probe:
+                res["probe"] = page.evaluate("""(name) => { const want = name.toLowerCase().replace(/\s+/g, ' ');
+                    const out = { found: false };
+                    for (const tr of document.querySelectorAll('.panel tbody tr')) if (tr.querySelector('.linkname')?.textContent.toLowerCase().replace(/\s+/g, ' ') === want) { out.found = true; out.panel = tr.closest('.panel').classList.contains('red') ? 'red' : 'yellow'; out.table_text = tr.children[1].textContent; out.weeks_absent = tr.children[2].textContent; }
+                    for (const row of document.querySelectorAll('#grid .row')) if (row.querySelector('.linkname')?.textContent.toLowerCase().replace(/\s+/g, ' ') === want) { out.everyone_text = row.querySelector('.cell-num.last').textContent; row.querySelector('.linkname').click(); out.modal_last = document.querySelector('#modalBody .stat .v').textContent; out.modal_note = [...document.querySelectorAll('#modalBody .note')].map(n => n.textContent).join(' ').replace(want, '<name>'); document.querySelector('.modal-x').click(); }
+                    return out; }""", args.probe)
+            if args.crop_last and args.shots:
+                box = page.evaluate("""(() => { const p = document.querySelector('.panel.red .plist'); p.style.maxHeight = 'none';
+                    const th = document.querySelector('.panel.red thead th:nth-child(2)'); const tds = [...document.querySelectorAll('.panel.red tbody td:nth-child(2)')];
+                    window.scrollTo(0, 0); const a = th.getBoundingClientRect(), z = tds[tds.length - 1].getBoundingClientRect();
+                    return { x: a.left + scrollX - 6, y: a.top + scrollY - 4, width: Math.max(a.width, ...tds.map(t => t.getBoundingClientRect().width)) + 12, height: z.bottom - a.top + 8 }; })()""")
+                cp = os.path.join(args.shots, args.prefix + "red-last-attended-column.png")
+                page.screenshot(path=cp, clip=box, full_page=True)
+                res["crop"] = cp
             res["celebration_shown"] = page.locator(".celebrate").count() > 0
             res["name_check_section"] = page.locator(".namecheck").count() > 0
             res["error_page_shown"] = page.locator("#app").is_hidden()

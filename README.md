@@ -17,9 +17,10 @@ Nothing readable is in this repository: the page decrypts `data.enc.json` in the
 4. **Never an error page.** If the live read fails for any reason (Google down, CORS, rate limit,
    timeout after 20 s, a layout change, implausible numbers), the snapshot stays on screen with a
    note. A failed Refresh keeps the data that was already loaded.
-5. **Cache-safe deploys.** The page assets are versioned (`assets/app.2.js`, `assets/roll.2.js`,
-   `assets/app.2.css`). The root `app.js` and `app.css` are the previous version, kept so a
-   browser holding a cached old `index.html` keeps working. **Never delete `data.enc.json`.**
+5. **Cache-safe deploys.** The page assets are versioned (`assets/app.3.js`, `assets/roll.3.js`,
+   `assets/app.3.css`). The older versions (`assets/*.2.*` and the root `app.js` / `app.css`) are
+   kept, so a browser holding a cached old `index.html` keeps working. A new change gets new
+   file names (`*.4.*`). **Never delete `data.enc.json` or old assets.**
 
 ### Rules (the same for the snapshot and the live data)
 
@@ -36,6 +37,17 @@ Nothing readable is in this repository: the page decrypts `data.enc.json` in the
   **Visitors** number. They are never named and are never moved onto the main list. A newcomer
   entry for someone already on the main list counts them present.
 - **Red** = 5+ Sundays missed in a row; **Yellow** = 3–4.
+- **Last seen:** the most recent Sunday attended, from the loaded weeks or, before them, the
+  sheet's older record: the master grids `Attendance 0525-0226`, `0301` and `May 17` (since May
+  2025), the summer tabs, and the weekly tabs from Aug 9. That older record does not change, so
+  `tools/build_snapshot.py` bakes it into the encrypted snapshot (`tools/older_record.py`). The
+  page reads nothing extra and nothing can fail at load time.
+  - Weeks with almost no check marks are skipped: Dec 28 2025, Mar 1 2026 and the blank `May 17`
+    column. Mar 22 – May 31 2026 (post-Pascha self-check) counts presence only.
+  - An older spelling of the same person (e.g. a one-letter first-name variant) is matched when it
+    is the only candidate.
+  - In the red, yellow and Everyone lists, an attendance inside the loaded weeks shows as `Sep 6`
+    and an older one as `Last seen Mar 2026`. `never` means no attendance anywhere in the sheet.
 - **Baptized marker:** a check box (or `x` / `Baptized`) in **column D** on the newest tab. Marked
   people are shown with a "baptized" tag but are left out of red/yellow and the weekly counts. The
   weekly script highlights them so Martha can remove them.
@@ -66,7 +78,8 @@ After that it runs `weeklyUpdate` every **Sunday at about 3 PM Pacific**. Each r
    Other).
 2. **Comebacks:** an archived person back on the newest tab gets a `Returned` date.
 3. **New tab:** creates next Sunday's tab as a copy, with check boxes and newcomer names cleared.
-4. **History:** tabs 6+ weeks old are copied to `History`, verified, then hidden. A tab is never
+4. **History:** weekly tabs (from `Aug 9` on, so the `May 17` master grid and the summer tabs are
+   left alone) 6+ weeks old are copied to `History`, verified, then hidden. A tab is never
    hidden if its copy failed. Published pages leave hidden tabs out, so the dashboard reads those
    weeks from `History`.
 5. **Name check:** rewrites the `Name check` tab.

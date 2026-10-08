@@ -22,6 +22,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import build_encrypted as be  # noqa: E402
 from names import name_key  # noqa: E402
+import older_record  # noqa: E402
 
 PUB_RE = re.compile(r"^https://docs\.google\.com/spreadsheets/d/e/(2PACX-[A-Za-z0-9_-]{20,})(?:/[^?#]*)?(?:[?#].*)?$")
 
@@ -95,12 +96,17 @@ def main():
             if name_key(p["n"]) in marked:
                 p["b"] = 1
         archive = archive_rows(xlsx)
+        # older attendance (master grids, summer tabs, weekly tabs) for "Last seen <Mon YYYY>"
+        wb = openpyxl.load_workbook(xlsx, data_only=True, read_only=True)
+        roster = [p["n"] for p in people if p["w"][-1] in "PA"]
+        older, ostats = older_record.build(wb, [p["n"] for p in people], dt.date.fromisoformat(weeks[-1]["date"]), roster)
+        ostats.pop("rules", None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     payload = {"v": 1, "title": args.title, "banner": "",
                "generated": dt.datetime.now().astimezone().isoformat(timespec="minutes"),
-               "weeks": weeks, "people": people, "archive": archive,
+               "weeks": weeks, "people": people, "archive": archive, "older": older,
                "live": {"pub": base, "weeks": args.weeks}}
     blob = be.encrypt(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
                       passcode, args.iterations)
@@ -114,6 +120,7 @@ def main():
     os.replace(tmpf, out)
     print(f"Wrote {out}", file=sys.stderr)
     print(be.summarize(weeks, people), file=sys.stderr)
+    print("older record: " + ", ".join(f"{k} {v}" for k, v in ostats.items()), file=sys.stderr)
 
 
 if __name__ == "__main__":
