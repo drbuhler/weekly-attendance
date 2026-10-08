@@ -51,6 +51,9 @@ button clears it.
   are never written to any file or put in the encrypted payload. Visitors are left out of
   the people total, red/yellow/OK, the heatmap, and attendance %. Once a name is added to
   the main list, that person appears normally from that week on.
+- Someone who is **on that week's main list** with their box unticked, but checked in
+  through the newcomer area (or an off-list row), is counted **present** that week, not
+  absent and not a visitor.
 - A cell with `x` is treated as attended.
 
 ## One-time setup (on the shared computer)

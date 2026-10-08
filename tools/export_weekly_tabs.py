@@ -14,6 +14,11 @@ who are NOT already on the main list (that week or an earlier exported week). Th
 de-duplicated against the main list and within the week using the same name normalisation the
 build uses for merging. Visitor names are never written anywhere; they only exist in memory.
 
+A person who is on that week's main list but whose box is unticked, and who checked in through
+the newcomer area / an off-list row, is counted PRESENT that week (not absent, not a visitor).
+Someone who was on the main list in an earlier week but has no main-list row this week is
+neither a visitor nor marked present (their week stays "not on that week's sheet").
+
 Weekly tabs are sheets named like "Oct 4" / "Sept 20" / "July5". By default the latest 8
 whose date is not in the future are used (--weeks N, --through YYYY-MM-DD, or --tabs ...).
 The attendance CSV holds real names: keep it outside the repo (the script refuses otherwise).
@@ -73,8 +78,9 @@ def main():
         sys.exit("No weekly tabs found.")
 
     roster = {}            # main list: name -> {tab: checkbox}
+    key_names = {}         # normalised key -> main-list spellings
     on_main = set()        # normalised keys seen on the main list so far (this week and earlier)
-    visitors = []          # per-tab counts
+    visitors, credited = [], []   # per-tab counts
     for t in tabs:
         ws = wb[t]
         week_main, week_visit = set(), set()
@@ -85,12 +91,22 @@ def main():
                 if "," in c:
                     roster.setdefault(c.strip(), {})[t] = b
                     week_main.add(name_key(c))
+                    key_names.setdefault(name_key(c), set()).add(c.strip())
                 elif b is True:
                     week_visit.add(name_key(c))          # off-list checkbox row, checked in
             if isinstance(i, str) and i.strip() and "NEW NAMES" not in i.upper() and h is True:
                 week_visit.add(name_key(i))              # NEW NAMES area, checked in
         on_main |= week_main
         week_visit.discard("")
+        # on this week's main list (box unticked) but checked in via the newcomer area -> present
+        n_credit = 0
+        for k in week_visit & week_main:
+            names = key_names[k]
+            if not any(roster[n].get(t) is True for n in names):
+                n_credit += 1
+                for n in names:
+                    roster[n][t] = True
+        credited.append(n_credit)
         visitors.append(len(week_visit - on_main))
         del week_visit
 
@@ -104,8 +120,11 @@ def main():
         w = csv.writer(f)
         w.writerow(["week", "visitors"])
         w.writerows(zip(tabs, visitors))
+    os.chmod(vout, 0o600)
     print(f"{len(tabs)} tabs ({tabs[0]} .. {tabs[-1]}), {len(roster)} main-list names -> {out}", file=sys.stderr)
     print(f"visitor counts -> {vout}: " + ", ".join(f"{t}: {v}" for t, v in zip(tabs, visitors)), file=sys.stderr)
+    print("main-list people credited present via newcomer-area check-in: "
+          + ", ".join(f"{t}: {v}" for t, v in zip(tabs, credited)) + f" (total {sum(credited)})", file=sys.stderr)
 
 
 if __name__ == "__main__":
