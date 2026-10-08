@@ -180,7 +180,7 @@
           if (c.includes(",")) {
             const n = c.trim(), k = nameKey(c);
             if (!roster.has(n)) roster.set(n, new Map());
-            roster.get(n).set(t, b);
+            roster.get(n).set(t, String(b == null ? "" : b).trim() === "" ? "FALSE" : b); // blank box: on the list, not checked
             weekMain.add(k);
             if (t === weekly.length - 1 && isMark(r[3])) marked.add(k);
             if (!keyNames.has(k)) keyNames.set(k, new Set());
@@ -286,21 +286,26 @@
   }
   /* entries: [{n, where}] -> [{a, b, why}] pairs worth a human look. Never merges anything.
      Only pairs that include at least one entry with where === "list" are reported. */
-  function nameCheck(entries) {
+  /* light phonetic match from roster_reconcile.py (Zain/Zane, Kaitlyn/Kaitlin) */
+  const phon = (x) => x.replace(/(ai|ay|ey)/g, "a").replace(/e$/, "").replace(/(.)\1/g, "$1").replace(/y/g, "i");
+  const near = (a, b) => editDistance(a, b, 1) <= 1 || phon(a) === phon(b);
+  function nameCheck(entries, notSame) {
+    const skipPair = notSame instanceof Set ? notSame : new Set();
     const E = entries.map((e) => ({ ...e, nn: normName(e.n), k: nameKey(e.n) })).filter((e) => e.nn);
     const out = [], seen = new Set();
     for (let i = 0; i < E.length; i++) for (let j = i + 1; j < E.length; j++) {
       const a = E[i], b = E[j];
       if (a.where !== "list" && b.where !== "list") continue;
       if (a.k === b.k) continue;   // same key: already merged as one person (or an Archive comeback)
+      if (skipPair.has(a.k + "|" + b.k)) continue;   // confirmed different people (e.g. father and son)
       const A = a.nn, B = b.nn;
       let why = null;
       const firstTok = (x) => x.split(" ")[0];
       const toks = (x) => (x.last + " " + x.first).split(" ").sort().join(" ");
       if ((A.last === B.last && A.first === B.first) || toks(A) === toks(B)) why = "same name once case, spacing, order, hyphens and Jr./Sr. are ignored";
       else if (A.last === B.first && A.first === B.last) why = "first and last name swapped";
-      else if (A.last === B.last && (editDistance(A.first, B.first, 1) <= 1 || editDistance(firstTok(A.first), firstTok(B.first), 1) <= 1) && Math.min(A.first.length, B.first.length) >= 3) why = "first names differ by one letter";
-      else if ((A.first === B.first || firstTok(A.first) === firstTok(B.first)) && Math.min(A.last.length, B.last.length) >= 4 && editDistance(A.last, B.last, 1) <= 1) why = "last names differ by one letter";
+      else if (A.last === B.last && (near(A.first, B.first) || near(firstTok(A.first), firstTok(B.first))) && Math.min(A.first.length, B.first.length) >= 3) why = "first names differ by one letter or sound alike";
+      else if ((A.first === B.first || firstTok(A.first) === firstTok(B.first)) && Math.min(A.last.length, B.last.length) >= 4 && near(A.last, B.last)) why = "last names differ by one letter or sound alike";
       if (!why) continue;
       const id = [a.n, a.where, b.n, b.where].join("|");
       if (seen.has(id)) continue;
@@ -314,11 +319,11 @@
   /* Older attendance record baked into the snapshot (tools/older_record.py): {d:[iso], p:{key:[idx]}}.
      Dates inside the loaded window come from the loaded weeks only; older dates from the record.
      -> {lastSeen: iso, sessions: n, since: iso} or null */
-  function olderRecord(data, name, w) {
+  function olderRecord(data, name, w, keys) {
     const O = data.older, weeks = data.weeks;
     const start = weeks.length ? weeks[0].date : "9999";
     const dates = new Set();
-    if (O && O.d && O.p) for (const i of O.p[nameKey(name)] || []) { const d = O.d[i]; if (d && d < start) dates.add(d); }
+    if (O && O.d && O.p) for (const k of keys || [nameKey(name)]) for (const i of O.p[k] || []) { const d = O.d[i]; if (d && d < start) dates.add(d); }
     weeks.forEach((wk, j) => { if (w[j] === "P") dates.add(wk.date); });
     if (!dates.size) return null;
     const all = [...dates].sort();
@@ -333,13 +338,46 @@
         where the loaded tabs have no row for them.
      4. b:1 (marked Baptized) people are kept on screen but out of red/yellow and the weekly counts.
      Returns {weeks, people, left, archive:{baptizedThisYear, chrismatedThisYear, recent}, nameCheck} */
+  /* Dionysius's decisions, from the encrypted snapshot (tools/build_snapshot.py --overrides):
+       renames {oldKey: {to: newKey, name}}   old spelling's weeks merged into the new spelling
+       notSame [[keyA, keyB]]                 never flagged by Name check (father/son pairs)
+       washedOut [{key, name}]                treated as archived "Washed out" until a real Archive row exists */
+  function mergeRenames(people, ov, W) {
+    const ren = (ov && ov.renames) || {};
+    if (!Object.keys(ren).length) return people.map((p) => ({ ...p, keys: [nameKey(p.n)] }));
+    const groups = new Map();
+    for (const p of people) {
+      const k = nameKey(p.n), tk = ren[k] ? ren[k].to : k;
+      if (!groups.has(tk)) groups.set(tk, []);
+      groups.get(tk).push({ p, k });
+    }
+    const rank = { P: 3, A: 2, G: 1, N: 0 };
+    const out = [];
+    for (const [tk, list] of groups) {
+      if (list.length === 1 && list[0].k === tk) { out.push({ ...list[0].p, keys: [tk] }); continue; }
+      const main = list.find((x) => x.k === tk);
+      const w = [];
+      for (let j = 0; j < W; j++) w.push(list.map((x) => x.p.w[j]).sort((a, b) => rank[b] - rank[a])[0]);
+      const first = w.findIndex((c) => c === "P" || c === "A");
+      const p = { n: main ? main.p.n : (Object.values(ren).find((r) => r.to === tk) || {}).name || list[0].p.n,
+                  w: w.map((c, j) => (first < 0 || j < first ? "N" : c === "N" ? "G" : c)).join(""),
+                  keys: [tk, ...list.map((x) => x.k).filter((k) => k !== tk)], merged: list.length - (main ? 1 : 0) };
+      if (list.some((x) => x.p.b)) p.b = 1;
+      out.push(p);
+    }
+    return out;
+  }
+
   function applyRules(data, archiveRows, now) {
     const W = data.weeks.length, last = W - 1;
+    const ov = data.overrides || {};
     const archive = parseArchive(archiveRows || []);
     const arcByKey = new Map();
     for (const a of archive) { if (!arcByKey.has(a.key)) arcByKey.set(a.key, []); arcByKey.get(a.key).push(a); }
-    const tracked = [], left = [];
-    for (const p0 of data.people) {
+    const washed = new Map((ov.washedOut || []).filter((x) => !arcByKey.has(x.key)).map((x) => [x.key, x]));
+    const tracked = [], left = [], washedOut = [];
+    for (const p0 of mergeRenames(data.people, ov, W)) {
+      if (washed.has(p0.keys[0])) { washedOut.push(p0); continue; }
       if (!(p0.w[last] === "P" || p0.w[last] === "A")) { left.push(p0); continue; }
       let w = p0.w.split("");
       let restored = 0;
@@ -354,11 +392,18 @@
       }
       const p = { n: p0.n, w: w.join("") };
       if (p0.b) p.b = 1;
-      const rec = olderRecord(data, p.n, p.w);
+      const rec = olderRecord(data, p.n, p.w, p0.keys);
+      if (p0.merged) p.merged = p0.merged;
       if (rec) Object.assign(p, rec);
       if (restored) p.restored = restored;
       if (arcByKey.has(nameKey(p0.n))) p.cameBack = 1;
       tracked.push(p);
+    }
+    // washed-out override: shown nowhere, like an Archive row "Washed out" dated their last attendance
+    for (const [k, x] of washed) {
+      const p = washedOut.find((q) => q.keys[0] === k);
+      const rec = p ? olderRecord(data, p.n, p.w, p.keys) : null;
+      archive.push({ n: p ? p.n : x.name, key: k, left: rec ? rec.lastSeen : "", reason: "Washed out", returned: false, hist: new Map(), override: true });
     }
     const year = String(pacificNow(now || new Date()).y);
     const live = archive.filter((a) => !a.returned);
@@ -372,10 +417,11 @@
       ...live.map((a) => ({ n: a.n, where: "archive" })),
     ];
     return {
-      ...data, people: tracked, leftCount: left.length,
+      ...data, people: tracked, leftCount: left.length + washedOut.length,
       archive: { rows: archive.length, baptizedThisYear: live.filter((a) => isBapt(a) && a.left.startsWith(year)).length,
                  chrismatedThisYear: live.filter((a) => isChrism(a) && a.left.startsWith(year)).length, recent },
-      nameCheck: nameCheck(entries),
+      nameCheck: nameCheck(entries, new Set((ov.notSame || []).flatMap(([a, b]) => [a + "|" + b, b + "|" + a]))),
+      washedOutOverride: washed.size, washedOutExcluded: washedOut.length, renamesMerged: tracked.reduce((n, p) => n + (p.merged || 0), 0),
     };
   }
 

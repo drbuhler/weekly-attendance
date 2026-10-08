@@ -34,6 +34,7 @@ def serve(directory):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url")
+    ap.add_argument("--site", default=ROOT, help="serve this checkout instead of this one (e.g. a git worktree of an older commit)")
     ap.add_argument("--scenario", default="normal",
                     choices=["normal", "google-down", "http500", "timeout", "nocors", "html", "history"])
     ap.add_argument("--history-csv")
@@ -58,7 +59,7 @@ def main():
     if not args.url:
         tmp = tempfile.mkdtemp(prefix="attcheck-")
         for f in SITE:
-            src = os.path.join(ROOT, f)
+            src = os.path.join(args.site, f)
             if os.path.isdir(src):
                 shutil.copytree(src, os.path.join(tmp, f))
             elif os.path.exists(src):
@@ -163,6 +164,9 @@ def main():
                              "marked_baptized": s.get("markedBaptized"), "left_list": s.get("leftList"), "name_check": s.get("nameCheck"),
                              "came_back": s.get("cameBack"), "archive": s.get("archive"),
                              "weekly_attended": [f"{x['present']}/{x['onSheet']}" for x in w]}
+            res["ov"] = {k: s.get(k) for k in ("washedOutOverride", "washedOutExcluded", "renamesMerged")}
+            res["name_check_kinds"] = page.evaluate("""(() => { const c = {}; document.querySelectorAll('.namecheck tbody tr').forEach(tr => {
+                const k = tr.children[2].textContent + ' / ' + (tr.children[1].querySelector('.muted')?.textContent || ''); c[k] = (c[k] || 0) + 1; }); return c; })()""")
             res["last_seen"] = {k: s.get(k) for k in ("olderRecord", "lastSeenOlder", "neverAnywhere", "redNever", "redLastSeenOlder")}
             res["red_table_last_texts"] = page.evaluate("""(() => { const c = {}; document.querySelectorAll('.panel.red tbody tr td:nth-child(2)')
                 .forEach(td => { const t = td.textContent.trim(); const k = t === 'never' ? 'never' : t.startsWith('Last seen') ? 'Last seen <Mon YYYY>' : '<Mon D> (in window)'; c[k] = (c[k] || 0) + 1; }); return c; })()""")
@@ -170,7 +174,7 @@ def main():
                 res["probe"] = page.evaluate("""(name) => { const want = name.toLowerCase().replace(/\s+/g, ' ');
                     const out = { found: false };
                     for (const tr of document.querySelectorAll('.panel tbody tr')) if (tr.querySelector('.linkname')?.textContent.toLowerCase().replace(/\s+/g, ' ') === want) { out.found = true; out.panel = tr.closest('.panel').classList.contains('red') ? 'red' : 'yellow'; out.table_text = tr.children[1].textContent; out.weeks_absent = tr.children[2].textContent; }
-                    for (const row of document.querySelectorAll('#grid .row')) if (row.querySelector('.linkname')?.textContent.toLowerCase().replace(/\s+/g, ' ') === want) { out.everyone_text = row.querySelector('.cell-num.last').textContent; row.querySelector('.linkname').click(); out.modal_last = document.querySelector('#modalBody .stat .v').textContent; out.modal_note = [...document.querySelectorAll('#modalBody .note')].map(n => n.textContent).join(' ').replace(want, '<name>'); document.querySelector('.modal-x').click(); }
+                    for (const row of document.querySelectorAll('#grid .row')) if (row.querySelector('.linkname')?.textContent.toLowerCase().replace(/\s+/g, ' ') === want) { out.everyone_text = row.querySelector('.cell-num.last').textContent; out.cells = [...row.querySelectorAll('i.sq')].map(i => i.className.replace('sq c-', '')).join(''); row.querySelector('.linkname').click(); out.modal_last = document.querySelector('#modalBody .stat .v').textContent; out.modal_note = [...document.querySelectorAll('#modalBody .note')].map(n => n.textContent).join(' ').replace(want, '<name>'); document.querySelector('.modal-x').click(); }
                     return out; }""", args.probe)
             if args.crop_last and args.shots:
                 box = page.evaluate("""(() => { const p = document.querySelector('.panel.red .plist'); p.style.maxHeight = 'none';

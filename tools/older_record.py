@@ -154,6 +154,7 @@ def collect(wb, through):
         rules[(s, d)] = "skip" if (T + F == 0 or T / (T + F) < .10 or T < 10) else \
             ("presence_only" if SPARSE[0] <= d <= SPARSE[1] else "valid")
     present, weekly = defaultdict(set), defaultdict(set)
+    first_main = {}  # key -> first date on a weekly tab's main list (comma name in C)
     for k, by_d in marks.items():
         for d, by in by_d.items():
             if any(v for s, v in by.items() if rules[(s, d)] != "skip"):
@@ -166,17 +167,25 @@ def collect(wb, through):
         for r in rows(t):
             r = list(r) + [None] * 10
             c, i = r[2], r[8]
+            if isinstance(c, str) and "," in c and norm(c):
+                k = name_key(c)
+                first_main[k] = min(first_main.get(k, d), d)
             if isinstance(c, str) and c.strip() and norm(c) and str(r[1]).strip().lower() in PRESENT:
                 weekly[name_key(c)].add(d)
             if isinstance(i, str) and norm(i) and "NEW NAMES" not in i.upper() and r[7] is True:
                 weekly[name_key(i)].add(d)
+    collect.first_main = first_main
     return present, weekly, raw, rules
 
 
-def build(wb, people_names, through, roster_names=None):
+def build(wb, people_names, through, roster_names=None, renames=None, not_same=None, enroll_main_only=None):
     """people_names: every current spelling; roster_names: the newest tab's list (spellings that
     can't be borrowed as someone else's older spelling; default: all of people_names).
+    renames {old_key: new_key}: the old spelling's record is added to the new one.
+    not_same {frozenset({key, key})}: never borrowed as each other's older spelling.
+    enroll_main_only {key}: write-ins before the first main-list appearance don't count.
     Returns ({"d": [iso...], "p": {key: [date idx...]}}, stats)"""
+    renames, not_same, enroll_main_only = renames or {}, not_same or set(), enroll_main_only or set()
     older, weekly, raw, rules = collect(wb, through)
     cur = {name_key(n): n for n in people_names}
     taken = {name_key(n) for n in (roster_names if roster_names is not None else people_names)}
@@ -185,10 +194,18 @@ def build(wb, people_names, through, roster_names=None):
     for k, n in cur.items():
         src = k
         if k not in raw:  # no older row under this spelling: look for one older spelling variant
-            c = [ok for ok, rn in raw.items() if ok not in taken and variant(n, rn) not in (None, "exact")]
+            c = [ok for ok, rn in raw.items() if ok not in taken and frozenset((k, ok)) not in not_same
+                 and variant(n, rn) not in (None, "exact")]
             if len(c) == 1:
                 src = c[0]; aliases += 1
-        s = older.get(src, set()) | weekly.get(k, set())
+        wk = weekly.get(k, set())
+        if k in enroll_main_only:
+            fm = collect.first_main.get(k)
+            wk = {d for d in wk if fm and d >= fm}
+        s = older.get(src, set()) | wk
+        for ok, tk in renames.items():
+            if tk == k:
+                s = s | older.get(ok, set()) | weekly.get(ok, set())
         if s:
             per[k] = s
     dates = sorted({d for s in per.values() for d in s})

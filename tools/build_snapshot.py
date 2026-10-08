@@ -24,6 +24,27 @@ import build_encrypted as be  # noqa: E402
 from names import name_key  # noqa: E402
 import older_record  # noqa: E402
 
+DEFAULT_OVERRIDES = "/workspace/catechumen-dashboard/dashboard_overrides.json"
+
+
+def load_overrides(path):
+    """-> (payload block with name keys, build-time sets). Missing file = no overrides."""
+    if not path or not os.path.exists(path):
+        return {}, {}, set(), set()
+    if os.path.abspath(path).startswith(ROOT + os.sep):
+        sys.exit("The overrides file holds names: keep it outside the repo.")
+    o = json.load(open(path, encoding="utf-8"))
+    renames = {}
+    for r in o.get("renames", []):
+        for old in r["from"]:
+            renames[name_key(old)] = {"to": name_key(r["to"]), "name": r["to"]}
+    not_same = [[name_key(a), name_key(b)] for a, b in o.get("not_same", [])]
+    washed = [{"key": name_key(n), "name": n} for n in o.get("washed_out", [])]
+    enroll = {name_key(n) for n in o.get("enroll_main_only", [])}
+    block = {"renames": renames, "notSame": not_same, "washedOut": washed}
+    return block, {k: v["to"] for k, v in renames.items()}, {frozenset(p) for p in not_same}, enroll
+
+
 PUB_RE = re.compile(r"^https://docs\.google\.com/spreadsheets/d/e/(2PACX-[A-Za-z0-9_-]{20,})(?:/[^?#]*)?(?:[?#].*)?$")
 
 
@@ -55,6 +76,8 @@ def main():
     ap.add_argument("--weeks", type=int, default=8)
     ap.add_argument("--now", help="pretend the current time is this ISO date-time (testing)")
     ap.add_argument("--iterations", type=int, default=be.DEFAULT_ITER)
+    ap.add_argument("--overrides", default=os.environ.get("ATTENDANCE_OVERRIDES", DEFAULT_OVERRIDES),
+                    help="JSON of confirmed decisions (renames, father/son pairs, washed out); names, so keep it OUTSIDE the repo")
     args = ap.parse_args()
 
     url = os.environ.get("ATTENDANCE_SHEET_URL")
@@ -99,14 +122,16 @@ def main():
         # older attendance (master grids, summer tabs, weekly tabs) for "Last seen <Mon YYYY>"
         wb = openpyxl.load_workbook(xlsx, data_only=True, read_only=True)
         roster = [p["n"] for p in people if p["w"][-1] in "PA"]
-        older, ostats = older_record.build(wb, [p["n"] for p in people], dt.date.fromisoformat(weeks[-1]["date"]), roster)
+        ov_block, ov_ren, ov_not_same, ov_enroll = load_overrides(args.overrides)
+        older, ostats = older_record.build(wb, [p["n"] for p in people], dt.date.fromisoformat(weeks[-1]["date"]), roster,
+                                           ov_ren, ov_not_same, ov_enroll)
         ostats.pop("rules", None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     payload = {"v": 1, "title": args.title, "banner": "",
                "generated": dt.datetime.now().astimezone().isoformat(timespec="minutes"),
-               "weeks": weeks, "people": people, "archive": archive, "older": older,
+               "weeks": weeks, "people": people, "archive": archive, "older": older, "overrides": ov_block,
                "live": {"pub": base, "weeks": args.weeks}}
     blob = be.encrypt(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
                       passcode, args.iterations)
@@ -121,6 +146,8 @@ def main():
     print(f"Wrote {out}", file=sys.stderr)
     print(be.summarize(weeks, people), file=sys.stderr)
     print("older record: " + ", ".join(f"{k} {v}" for k, v in ostats.items()), file=sys.stderr)
+    print(f"overrides: {len(ov_block.get('renames', {}))} old spellings merged, {len(ov_block.get('notSame', []))} not-same pairs, "
+          f"{len(ov_block.get('washedOut', []))} washed out, {len(ov_enroll)} main-list-only enrollments", file=sys.stderr)
 
 
 if __name__ == "__main__":

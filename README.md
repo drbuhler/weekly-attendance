@@ -55,10 +55,28 @@ Nothing readable is in this repository: the page decrypts `data.enc.json` in the
   "Baptized this year" (and chrismated), plus recent baptisms. A tracked person who is also on the
   Archive is a **comeback**: any weeks missing from the loaded tabs are restored from their
   Archive "Week history".
+- **Confirmed decisions (overrides)** live in a JSON file OUTSIDE the repo (default
+  `/workspace/catechumen-dashboard/dashboard_overrides.json`, or `--overrides` /
+  `ATTENDANCE_OVERRIDES`). `build_snapshot.py` encrypts them into `data.enc.json`:
+  ```json
+  {"not_same": [["Last, First", "Last, First Jr."]],
+   "renames": [{"from": ["Old, Spelling"], "to": "New, Spelling"}],
+   "washed_out": ["Name"], "enroll_main_only": ["Last, First"]}
+  ```
+  - `not_same` pairs are never flagged by Name check and are never merged.
+  - `renames` merge the old spelling's weeks (and older record) into the new spelling.
+  - `washed_out` people are left out of everything, as if archived "Washed out", until a real
+    Archive row for them exists.
+  - `enroll_main_only` ignores write-ins before the person's first main-list appearance in the
+    older record.
+
+  Changing them needs a snapshot rebuild.
+- A list row (`Last, First` in column C) whose check box is **blank** (no check box at all) counts
+  as on the list but not checked.
 - **Name check** (behind the passcode): likely duplicates and near-misspellings among the tracked
   roster, people who left the list in the loaded weeks, and the Archive. It ignores case, spacing,
-  `Last, First` order, hyphens and Jr./Sr., then looks for a one-letter difference in the first or
-  last name. Nothing is merged automatically. Newcomer names are not listed on the dashboard;
+  `Last, First` order, hyphens and Jr./Sr., then looks for a one-letter difference or a sound-alike
+  spelling (Zain/Zane) in the first or last name. Nothing is merged automatically. Newcomer names are not listed on the dashboard;
   they are on the sheet's own `Name check` tab.
 
 ## The Google Sheet
@@ -82,7 +100,8 @@ After that it runs `weeklyUpdate` every **Sunday at about 3 PM Pacific**. Each r
    left alone) 6+ weeks old are copied to `History`, verified, then hidden. A tab is never
    hidden if its copy failed. Published pages leave hidden tabs out, so the dashboard reads those
    weeks from `History`.
-5. **Name check:** rewrites the `Name check` tab.
+5. **Name check:** rewrites the `Name check` tab. Pairs listed on the `Name check exceptions` tab
+   (two names per row, e.g. a father and son) are skipped.
 
 Tab layouts written by the script (keep `History` and `Archive` visible and published):
 

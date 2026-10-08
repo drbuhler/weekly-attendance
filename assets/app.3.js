@@ -95,7 +95,7 @@
     return isNaN(d) ? "" : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   };
   function snapshotData() {
-    return { title: SNAP.title, banner: SNAP.banner || "", weeks: SNAP.weeks, people: SNAP.people, archiveRows: SNAP.archive || [], older: SNAP.older || null,
+    return { title: SNAP.title, banner: SNAP.banner || "", weeks: SNAP.weeks, people: SNAP.people, archiveRows: SNAP.archive || [], older: SNAP.older || null, overrides: SNAP.overrides || null,
              unknownMarks: 0, source: "snapshot" };
   }
 
@@ -139,7 +139,7 @@
     if (!weekly.length) throw new Error("no weekly tabs");
     const out = Roll.build(weekly);
     return { title: SNAP.title, banner: "", weeks: out.weeks, people: out.people, unknownMarks: out.unknownMarks,
-             archiveRows: arc || [], archiveOk: arc !== null, older: SNAP.older || null, source: "live", loadedAt: new Date(), historyFound: !!histTab, historyOk: hist !== null,
+             archiveRows: arc || [], archiveOk: arc !== null, older: SNAP.older || null, overrides: SNAP.overrides || null, source: "live", loadedAt: new Date(), historyFound: !!histTab, historyOk: hist !== null,
              historyWeeksUsed: weekly.filter((w) => w.fromHistory).length, wanted: n };
   }
 
@@ -240,6 +240,7 @@
       markedBaptized: D.baptized, leftList: D.leftCount, nameCheck: D.nameCheck.length, cameBack: D.people.filter((p) => p.cameBack).length,
       archive: { rows: D.archive.rows, baptizedThisYear: D.archive.baptizedThisYear, chrismatedThisYear: D.archive.chrismatedThisYear, recent: D.archive.recent.length },
       laterWeekOnly: D.people.filter((p) => p.first > 0).length,
+      washedOutOverride: D.washedOutOverride || 0, washedOutExcluded: D.washedOutExcluded || 0, renamesMerged: D.renamesMerged || 0,
       olderRecord: !!D.older, lastSeenOlder: D.people.filter((p) => p.lastIdx < 0 && p.lastSeen).length,
       neverAnywhere: D.people.filter((p) => !p.lastSeen).length,
       redNever: D.people.filter((p) => p.status === "red" && !p.lastSeen).length,

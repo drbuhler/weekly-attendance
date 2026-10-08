@@ -22,6 +22,9 @@
  *               (Published pages leave hidden tabs out; the dashboard reads them back from History.)
  *  5. NAME CHECK Rewrites the "Name check" tab: likely duplicates and near-misspellings on the newest
  *               tab (main list, NEW NAMES area and Archive). Nothing is ever merged automatically.
+ *               Pairs listed on the "Name check exceptions" tab (e.g. a father and son) are skipped.
+ *  NEW NAMES are never copied onto the main list by this script; the dashboard counts them only as
+ *  that Sunday's Visitors.
  *
  * The dashboard reads History, Archive and the weekly tabs from the published sheet, so these tabs
  * must stay VISIBLE and be included in File > Share > Publish to web.
@@ -37,6 +40,7 @@ const CFG = {
   HISTORY: 'History',
   ARCHIVE: 'Archive',
   NAME_CHECK: 'Name check',
+  NAME_CHECK_EXCEPTIONS: 'Name check exceptions', // two names per row that are confirmed different people (e.g. father/son)
   FIRST_WEEKLY_TAB: '2026-08-09', // older "Mon D" tabs (e.g. the 'May 17' master grid, summer tabs) are left alone
   HIDE_AFTER_WEEKS: 6,     // tabs this many weeks old (or older) are copied to History, then hidden
   KEEP_HISTORY_WEEKS: 26,  // History rows older than this are trimmed
@@ -74,6 +78,7 @@ function setupAttendanceSheet() {
   arc.getRange('J:J').setNumberFormat('@');
   arc.getRange(2, 4, arc.getMaxRows() - 1, 1).setDataValidation(reasonRule_());
   ensureSheet_(ss, CFG.NAME_CHECK, NAME_CHECK_HEAD);
+  ensureSheet_(ss, CFG.NAME_CHECK_EXCEPTIONS, ['Name', 'Is NOT the same person as']);
 
   // Baptized check boxes in column D next to every main-list name, on the newest and upcoming tabs
   const today = todayIso_();
@@ -282,7 +287,14 @@ function nameCheckNow() {
     arc.getRange(2, 1, arc.getLastRow() - 1, 8).getDisplayValues()
       .filter((r) => r[0] && !r[7]).forEach((r) => entries.push({ n: r[0], where: 'Archive' }));
   }
-  const pairs = nameCheck(entries);
+  const ex = ss.getSheetByName(CFG.NAME_CHECK_EXCEPTIONS);
+  const notSame = new Set();
+  if (ex && ex.getLastRow() > 1) {
+    ex.getRange(2, 1, ex.getLastRow() - 1, 2).getDisplayValues().forEach((r) => {
+      if (r[0] && r[1]) { notSame.add(nameKey(r[0]) + '|' + nameKey(r[1])); notSame.add(nameKey(r[1]) + '|' + nameKey(r[0])); }
+    });
+  }
+  const pairs = nameCheck(entries, notSame);
   const out = ensureSheet_(ss, CFG.NAME_CHECK, NAME_CHECK_HEAD);
   if (out.getLastRow() > 1) out.getRange(2, 1, out.getLastRow() - 1, NAME_CHECK_HEAD.length).clearContent();
   const stamp = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm');
@@ -469,7 +481,10 @@ function editDistance(a, b, max) {
   }
   return d[a.length][b.length];
 }
-function nameCheck(entries) {
+const phon = (x) => x.replace(/(ai|ay|ey)/g, 'a').replace(/e$/, '').replace(/(.)\1/g, '$1').replace(/y/g, 'i');
+const near = (a, b) => editDistance(a, b, 1) <= 1 || phon(a) === phon(b);
+function nameCheck(entries, notSame) {
+  notSame = notSame || new Set();
   const E = entries.map((e) => Object.assign({}, e, { nn: normName(e.n), k: nameKey(e.n) })).filter((e) => e.nn);
   const out = [], seen = {};
   const firstTok = (x) => x.split(' ')[0];
@@ -478,12 +493,13 @@ function nameCheck(entries) {
     const a = E[i], b = E[j];
     if (a.where !== 'list' && b.where !== 'list') continue;
     if (a.k === b.k) continue; // same person (or a checked-in newcomer already on the list)
+    if (notSame.has(a.k + '|' + b.k)) continue; // confirmed different people
     const A = a.nn, B = b.nn;
     let why = null;
     if ((A.last === B.last && A.first === B.first) || toks(A) === toks(B)) why = 'same name once case, spacing, order, hyphens and Jr./Sr. are ignored';
     else if (A.last === B.first && A.first === B.last) why = 'first and last name swapped';
-    else if (A.last === B.last && (editDistance(A.first, B.first, 1) <= 1 || editDistance(firstTok(A.first), firstTok(B.first), 1) <= 1) && Math.min(A.first.length, B.first.length) >= 3) why = 'first names differ by one letter';
-    else if ((A.first === B.first || firstTok(A.first) === firstTok(B.first)) && Math.min(A.last.length, B.last.length) >= 4 && editDistance(A.last, B.last, 1) <= 1) why = 'last names differ by one letter';
+    else if (A.last === B.last && (near(A.first, B.first) || near(firstTok(A.first), firstTok(B.first))) && Math.min(A.first.length, B.first.length) >= 3) why = 'first names differ by one letter or sound alike';
+    else if ((A.first === B.first || firstTok(A.first) === firstTok(B.first)) && Math.min(A.last.length, B.last.length) >= 4 && near(A.last, B.last)) why = 'last names differ by one letter or sound alike';
     if (!why) continue;
     const x = a.where === 'list' ? a : b, y = x === a ? b : a;
     const id = [x.n, x.where, y.n, y.where].join('|');

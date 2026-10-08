@@ -121,7 +121,8 @@ def main():
             b, c, h, i = row[1], row[2], row[7], row[8]
             if isinstance(c, str) and c.strip():
                 if "," in c:
-                    roster.setdefault(c.strip(), {})[t] = b
+                    # a list row whose box is blank (no check box) is on the list, not checked
+                    roster.setdefault(c.strip(), {})[t] = False if b is None or (isinstance(b, str) and not b.strip()) else b
                     if t == tabs[-1] and is_mark(row[3]):
                         marked.add(c.strip())
                     week_main.add(name_key(c))
