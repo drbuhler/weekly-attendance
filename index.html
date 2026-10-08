@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="light">
+<title>Attendance</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main id="lock" class="lock">
+  <form id="lockForm" class="lock-card" autocomplete="off">
+    <div class="lock-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="28" height="28"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M7 10V7a5 5 0 0 1 10 0v3M5.5 10h13a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1V11a1 1 0 0 1 1-1Z"/></svg>
+    </div>
+    <h1>Attendance</h1>
+    <p class="muted">This page is private. Enter the passcode to continue.</p>
+    <label class="sr-only" for="pass">Passcode</label>
+    <input id="pass" name="pass" type="password" placeholder="Passcode" autocomplete="current-password" spellcheck="false" autocapitalize="off" required>
+    <label class="remember"><input id="remember" type="checkbox"> Keep unlocked until this tab is closed</label>
+    <button id="unlockBtn" type="submit">Unlock</button>
+    <p id="lockMsg" class="lock-msg" role="status" aria-live="polite"></p>
+  </form>
+</main>
+
+<div id="app" class="app" hidden></div>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mName">
+    <button class="modal-x" type="button" data-close aria-label="Close">×</button>
+    <div id="modalBody"></div>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
