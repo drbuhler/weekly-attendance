@@ -94,7 +94,8 @@
     const weekly = weeks.map((_, j) => {
       let pr = 0, ab = 0;
       for (const p of people) { if (p.w[j] === "P") pr++; else if (p.w[j] === "A") ab++; }
-      return { present: pr, onSheet: pr + ab, pct: pr + ab ? pr / (pr + ab) : null };
+      const v = weeks[j].visitors;  // count only; visitors are never in the people list
+      return { present: pr, onSheet: pr + ab, pct: pr + ab ? pr / (pr + ab) : null, visitors: Number.isInteger(v) ? v : null };
     });
     const count = (s) => people.filter((p) => p.status === s).length;
     return { ...data, W, people, weekly, red: count("red"), yellow: count("yellow"), ok: count("ok") };
@@ -110,7 +111,7 @@
     window.__attendanceSummary = {  // aggregate-only hook used by automated checks
       people: D.people.length, red: D.red, yellow: D.yellow, ok: D.ok,
       laterWeekOnly: D.people.filter((p) => p.first > 0).length,
-      weekly: D.weekly.map((w, j) => ({ date: D.weeks[j].date, present: w.present, onSheet: w.onSheet, pct: w.pct })),
+      weekly: D.weekly.map((w, j) => ({ date: D.weeks[j].date, present: w.present, onSheet: w.onSheet, pct: w.pct, visitors: w.visitors })),
     };
     $("#lock").hidden = true;
     const app = $("#app");
@@ -125,7 +126,10 @@
     const W = D.W, L = D.weekly[W - 1], wk = D.weeks;
     const avg = D.weekly.reduce((a, w) => a + (w.pct || 0), 0) / D.weekly.filter((w) => w.pct != null).length;
     const maxP = Math.max(...D.weekly.map((w) => w.pct || 0), 0.01);
-    const spark = D.weekly.map((w, j) => `<i style="height:${Math.max(6, Math.round(((w.pct || 0) / maxP) * 100))}%" title="${esc(wk[j].label)}: ${pct(w.pct)} (${w.present}/${w.onSheet})"></i>`).join("");
+    const visTxt = (n) => (n == null ? "" : ` · ${n} visitor${n === 1 ? "" : "s"}`);
+    const spark = D.weekly.map((w, j) => `<i style="height:${Math.max(6, Math.round(((w.pct || 0) / maxP) * 100))}%" title="${esc(wk[j].label)}: ${pct(w.pct)} (${w.present}/${w.onSheet})${visTxt(w.visitors)}"></i>`).join("");
+    const hasVis = D.weekly.some((w) => w.visitors != null);
+    const visRow = hasVis ? `<div class="spark-v" title="Checked in but not yet on the main list; not counted in any other figure"><div class="lbl">Visitors per week</div><div class="nums">${D.weekly.map((w, j) => `<span title="${esc(wk[j].label)}: ${w.visitors == null ? "no count" : w.visitors + " visitors"}">${w.visitors == null ? "·" : w.visitors}</span>`).join("")}</div></div>` : "";
     const firstPct = D.weekly.find((w) => w.pct != null)?.pct;
     const delta = L.pct != null && firstPct != null ? Math.round((L.pct - firstPct) * 100) : null;
     const onLatest = D.people.filter((p) => p.w[W - 1] === "P" || p.w[W - 1] === "A").length;
@@ -139,11 +143,11 @@
       ${D.banner ? `<div class="banner">${esc(D.banner)}</div>` : ""}
       <section class="kpis" aria-label="Summary">
         <div class="kpi"><div class="k">Catechumens</div><div class="v">${D.people.length}</div><div class="s">${onLatest} on the ${esc(wk[W - 1].label)} sheet</div></div>
-        <div class="kpi"><div class="k">Attended ${esc(wk[W - 1].label)}</div><div class="v">${L.present}</div><div class="s">${pct(L.pct)} of those on the sheet</div></div>
+        <div class="kpi"><div class="k">Attended ${esc(wk[W - 1].label)}</div><div class="v">${L.present}</div><div class="s">${pct(L.pct)} of those on the sheet</div>${L.visitors == null ? "" : `<div class="s vis" title="Checked in but not yet on the main list. Not included in any other figure.">+ ${L.visitors} visitor${L.visitors === 1 ? "" : "s"}</div>`}</div>
         <div class="kpi trend"><div class="k">Weekly attendance</div>
           <div class="v">${pct(L.pct)}<span class="s" style="font:500 12.5px var(--sans);margin-left:8px">${delta == null ? "" : (delta >= 0 ? "+" : "") + delta + " pts since " + esc(wk[0].label)} · avg ${pct(avg)}</span></div>
           <div class="spark" role="img" aria-label="Weekly attendance percentages">${spark}</div>
-          <div class="spark-l"><span>${esc(wk[0].label)}</span><span>${esc(wk[W - 1].label)}</span></div></div>
+          <div class="spark-l"><span>${esc(wk[0].label)}</span><span>${esc(wk[W - 1].label)}</span></div>${visRow}</div>
         <div class="kpi red"><div class="k">Red</div><div class="v">${D.red}</div><div class="s">missed 5+ Sundays in a row</div></div>
         <div class="kpi amber"><div class="k">Yellow</div><div class="v">${D.yellow}</div><div class="s">missed 3–4 in a row</div></div>
       </section>
@@ -172,7 +176,7 @@
         </div>
         <div class="grid-wrap"><div class="grid" id="grid" style="--weeks:${W}"></div></div>
       </section>
-      <p class="foot">Weeks absent counts consecutive missed Sundays back from ${esc(wk[W - 1].label)}. Weeks before someone's first sign-in are "not yet enrolled", and weeks their name was missing from the sheet are skipped; neither counts as an absence. Attendance % = Sundays attended ÷ Sundays they were on the sheet.</p>`;
+      <p class="foot">Weeks absent counts consecutive missed Sundays back from ${esc(wk[W - 1].label)}. Weeks before someone's first sign-in are "not yet enrolled", and weeks their name was missing from the sheet are skipped; neither counts as an absence. Attendance % = Sundays attended ÷ Sundays they were on the sheet.${hasVis ? " Visitors are people who checked in but aren't on the main list yet; they appear only as a weekly count and aren't part of any other figure." : ""}</p>`;
   }
 
   function chip(v, label, n) { return `<button type="button" class="chip" data-filter="${v}" aria-pressed="${ui.filter === v}">${label}<b>${n}</b></button>`; }

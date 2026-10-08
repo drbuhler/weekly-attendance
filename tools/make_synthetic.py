@@ -6,7 +6,8 @@
 The shape mimics a real roster: ~280 people x 8 Sundays, most present on every
 weekly sheet, some only appearing in later weeks, a few dropping off the sheet,
 one duplicate spelling, and a mix of steady, irregular and lapsed attenders so
-the red/yellow panels have something to show. Nobody here is a real person.
+the red/yellow panels have something to show. It also writes fake per-week visitor
+counts to <out>.visitors.csv. Nobody here is a real person.
 """
 import csv
 import random
@@ -94,7 +95,14 @@ def main():
         w = csv.writer(f)
         w.writerow(["name", "Aug 16", "Aug 23", "Aug 30", "Sep 6", "Sep 13", "Sept 20", "Sept 27", "Oct 4"])
         w.writerows(sorted(rows))
-    print(f"Wrote {len(rows)} synthetic rows to {out}", file=sys.stderr)
+    vout = (out[:-4] if out.lower().endswith(".csv") else out) + ".visitors.csv"
+    weeks = ["Aug 16", "Aug 23", "Aug 30", "Sep 6", "Sep 13", "Sept 20", "Sept 27", "Oct 4"]
+    with open(vout, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["week", "visitors"])
+        for j, wk in enumerate(weeks):
+            w.writerow([wk, max(0, 6 + 2 * j + rng.randint(-3, 3))])
+    print(f"Wrote {len(rows)} synthetic rows to {out} and visitor counts to {vout}", file=sys.stderr)
 
 
 if __name__ == "__main__":

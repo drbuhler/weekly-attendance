@@ -16,6 +16,11 @@ cells after it mean "not on that week's sheet". Neither counts as an absence.
 Rows whose names differ only by case, spacing, punctuation or word order
 ("Doe, Jane" / "jane doe") are merged.
 
+Visitors (people checked in from the "NEW NAMES, NOT YET ON LIST" area or off-list rows)
+come from a separate counts-only file, week,visitors, written by export_weekly_tabs.py
+(default: <csv name>.visitors.csv next to the CSV). Only the per-week numbers go into the
+encrypted payload; visitors are never part of the people list, statuses or percentages.
+
 The passcode is read from the ATTENDANCE_PASSCODE environment variable or, if
 that is unset, from an interactive prompt. It is never accepted as an argument.
 
@@ -39,6 +44,9 @@ import unicodedata
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from names import clean_name, name_key  # noqa: E402
 
 MIN_ITER = 600_000
 DEFAULT_ITER = 650_000
@@ -71,16 +79,6 @@ def parse_week_headers(headers, start_year):
     if dates != sorted(dates):
         sys.exit("Week columns must be in chronological order.")
     return out
-
-
-def name_key(name):
-    s = unicodedata.normalize("NFKC", name).casefold()
-    tokens = re.findall(r"[^\W_]+(?:['’-][^\W_]+)*", s)
-    return " ".join(sorted(tokens))
-
-
-def clean_name(name):
-    return re.sub(r"\s*,\s*", ", ", re.sub(r"\s+", " ", name.strip()))
 
 
 def cell_state(v):
@@ -129,6 +127,28 @@ def load(csv_path, start_year):
     return weeks, people, len(rows) - 1
 
 
+def load_visitors(path, weeks, start_year):
+    """Attach per-week visitor counts (numbers only) to weeks; weeks missing from the file get None."""
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        rows = list(csv.reader(f))
+    if not rows or [h.strip().lower() for h in rows[0][:2]] != ["week", "visitors"]:
+        sys.exit("Visitor file must have the header: week,visitors")
+    labels = [r[0] for r in rows[1:] if r and r[0].strip()]
+    dates = [w["date"] for w in parse_week_headers(labels, start_year)] if labels else []
+    counts = {}
+    for d, r in zip(dates, [r for r in rows[1:] if r and r[0].strip()]):
+        try:
+            n = int(r[1])
+        except (IndexError, ValueError):
+            sys.exit("Visitor counts must be whole numbers.")
+        if n < 0:
+            sys.exit("Visitor counts must be >= 0.")
+        counts[d] = n
+    for w in weeks:
+        w["visitors"] = counts.get(w["date"])
+    return sum(1 for w in weeks if w["visitors"] is not None)
+
+
 def summarize(weeks, people):
     """Aggregate counts only (no names) for a sanity check on the console."""
     red = yellow = 0
@@ -150,7 +170,9 @@ def summarize(weeks, people):
         pr = sum(p["w"][j] == "P" for p in people)
         ab = sum(p["w"][j] == "A" for p in people)
         pct = f"{100 * pr / (pr + ab):.1f}%" if pr + ab else "n/a"
-        lines.append(f"  {w['date']}: {pr}/{pr + ab} attended ({pct})")
+        vis = w.get("visitors")
+        lines.append(f"  {w['date']}: {pr}/{pr + ab} attended ({pct})"
+                     + ("" if vis is None else f", visitors {vis}"))
     return "\n".join(lines)
 
 
@@ -189,6 +211,8 @@ def main():
                     help="calendar year of the first week column (default: inferred from today)")
     ap.add_argument("--title", default="Attendance", help="heading shown after unlocking (stored encrypted)")
     ap.add_argument("--banner", default="", help="optional notice shown after unlocking, e.g. for test previews")
+    ap.add_argument("--visitors", help="counts-only visitor file (default: <csv>.visitors.csv if it exists)")
+    ap.add_argument("--no-visitors", action="store_true", help="don't include visitor counts")
     ap.add_argument("--iterations", type=int, default=DEFAULT_ITER)
     ap.add_argument("--quiet", action="store_true", help="don't print aggregate counts")
     args = ap.parse_args()
@@ -207,6 +231,17 @@ def main():
             year -= 1
 
     weeks, people, raw_rows = load(args.csv, year)
+    vpath = args.visitors
+    if vpath is None and not args.no_visitors:
+        guess = (args.csv[:-4] if args.csv.lower().endswith(".csv") else args.csv) + ".visitors.csv"
+        vpath = guess if os.path.exists(guess) else None
+    if vpath and not args.no_visitors:
+        n = load_visitors(vpath, weeks, year)
+        print(f"Visitor counts: {n} of {len(weeks)} weeks from {vpath}", file=sys.stderr)
+    else:
+        for w in weeks:
+            w["visitors"] = None
+        print("Visitor counts: none included", file=sys.stderr)
     passcode = get_passcode()
     payload = {"v": 1, "title": args.title, "banner": args.banner,
                "generated": dt.datetime.now().astimezone().isoformat(timespec="minutes"),

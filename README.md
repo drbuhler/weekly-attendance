@@ -14,8 +14,9 @@ correct passcode is entered; until then the page shows only a lock screen.
 
 | Piece | What it does |
 |---|---|
-| `tools/export_weekly_tabs.py` | Reads an `.xlsx` download of the attendance sheet and writes the weekly check-in CSV (outside the repo). |
-| `tools/build_encrypted.py` | Reads that CSV, merges duplicate spellings, encrypts, and writes **only** `data.enc.json`. |
+| `tools/export_weekly_tabs.py` | Reads an `.xlsx` download of the attendance sheet and writes the main-list check-in CSV plus a counts-only visitor file (both outside the repo). |
+| `tools/build_encrypted.py` | Reads those files, merges duplicate spellings, encrypts, and writes **only** `data.enc.json`. |
+| `tools/names.py` | Shared name normalization used for merging and for de-duplicating visitors. |
 | `index.html` + `app.js` | Lock screen, then in-browser decryption (WebCrypto) and the dashboard. |
 | `tools/check_staged.py` | Pre-commit guard that blocks CSV/XLSX/JSON files, malformed `data.enc.json`, and anything resembling check-in rows. |
 | `tools/browser_check.py` | Headless-Chromium round-trip test that prints aggregate counts only. |
@@ -25,6 +26,10 @@ correct passcode is entered; until then the page shows only a lock screen.
 16-byte salt → AES-256-GCM with a random 12-byte IV. `data.enc.json` is
 `{"v":1,"salt":…,"iv":…,"iter":…,"ct":…}` (base64; `ct` includes the GCM tag). A new
 salt and IV are generated on every build.
+
+**Where visitors show:** an "+ N visitors" line on the *Attended* card for the latest
+week, and a small "Visitors per week" row under the weekly-attendance bars (also in each
+bar's tooltip).
 
 **"Keep unlocked until this tab is closed"** stores the derived key (not the passcode)
 in `sessionStorage` only. Nothing is written to `localStorage` or cookies. The **Lock**
@@ -39,6 +44,13 @@ button clears it.
   Neither counts as an absence, and both get their own neutral cell in the heatmap.
 - Attendance % = Sundays attended ÷ Sundays they were on the sheet.
 - Names that differ only by case, spacing, punctuation, or word order are merged.
+- **Visitors** are people checked in from the "NEW NAMES, NOT YET ON LIST" area, or on
+  checkbox rows that aren't on the main list, who are not already on the main list (that
+  week or an earlier one). They are de-duplicated against the main list and within the
+  week using the same name normalization. **Only a per-week count is kept**: their names
+  are never written to any file or put in the encrypted payload. Visitors are left out of
+  the people total, red/yellow/OK, the heatmap, and attendance %. Once a name is added to
+  the main list, that person appears normally from that week on.
 - A cell with `x` is treated as attended.
 
 ## One-time setup (on the shared computer)
@@ -63,8 +75,8 @@ cd /workspace/weekly-attendance && git pull
 ~/.venvs/attendance/bin/python tools/export_weekly_tabs.py \
     /workspace/catechumen-dashboard/catechism-attendance.xlsx \
     /workspace/catechumen-dashboard/weekly_tabs_attendance.csv
-#    (latest 8 dated tabs up to today; add --include-new-names to also count the
-#     "NEW NAMES, NOT YET ON LIST" area)
+#    Uses the latest 8 dated tabs up to today. It also writes the counts-only file
+#    /workspace/catechumen-dashboard/weekly_tabs_attendance.visitors.csv (week,visitors).
 
 # 2. Encrypt. You'll be prompted for the passcode twice; it is never a command-line argument.
 ~/.venvs/attendance/bin/python tools/build_encrypted.py \
@@ -77,7 +89,9 @@ git commit -m "Weekly attendance update"
 git push
 ```
 
-The build prints aggregate counts (people, red/yellow, weekly %) so you can sanity-check
+The build picks up `<csv name>.visitors.csv` automatically when it sits next to the CSV
+(or pass `--visitors PATH`, or `--no-visitors`). It prints aggregate counts (people,
+red/yellow, weekly %, visitors) so you can sanity-check
 them before pushing. GitHub Pages republishes within a minute or two. Optionally,
 before pushing, run a headless round trip (needs `pip install playwright`). It also
 asks for the passcode via the environment and prints counts only:
