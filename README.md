@@ -7,8 +7,12 @@ The site is static: `index.html`, `app.js`, `app.css`, and one encrypted data fi
 form. The browser downloads the encrypted file and decrypts it locally after the
 correct passcode is entered; until then the page shows only a lock screen.
 
-> **The current `data.enc.json` is a TEST PREVIEW** built from synthetic (fake)
-> names with the test passcode `test-preview-only`. It contains no real people.
+> The passcode is shared privately and is never stored in this repository.
+>
+> **Testing without real data:** `tools/make_synthetic.py` makes a fake roster. Build it to a
+> scratch path (`-o /tmp/test.enc.json`) with a throwaway passcode and check it with
+> `tools/browser_check.py --enc /tmp/test.enc.json`. Never commit a test build over the live
+> `data.enc.json`.
 
 ## How it works
 
@@ -20,7 +24,7 @@ correct passcode is entered; until then the page shows only a lock screen.
 | `index.html` + `app.js` | Lock screen, then in-browser decryption (WebCrypto) and the dashboard. |
 | `tools/check_staged.py` | Pre-commit guard that blocks CSV/XLSX/JSON files, malformed `data.enc.json`, and anything resembling check-in rows. |
 | `tools/browser_check.py` | Headless-Chromium round-trip test that prints aggregate counts only. |
-| `tools/make_synthetic.py` | Generates the fake preview roster. |
+| `tools/make_synthetic.py` | Generates a fake roster for testing. |
 
 **Crypto:** PBKDF2-HMAC-SHA256 (650,000 iterations; minimum 600,000) with a random
 16-byte salt → AES-256-GCM with a random 12-byte IV. `data.enc.json` is
