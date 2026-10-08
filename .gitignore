@@ -1,4 +1,4 @@
-# Never commit roster data or the sheet link. Only the encrypted config.enc.json is published.
+# Never commit roster data. Only the encrypted data.enc.json is published.
 *.csv
 *.tsv
 *.xlsx
@@ -7,7 +7,7 @@
 *.ods
 *.numbers
 *.json
-!config.enc.json
+!data.enc.json
 *.jsonl
 *.ndjson
 *.txt

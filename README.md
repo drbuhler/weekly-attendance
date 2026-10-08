@@ -1,115 +1,127 @@
 # weekly-attendance
 
-A single-page, passcode-protected attendance dashboard served by GitHub Pages. It reads the
-roll sheet **live** from Google Sheets, so there's no weekly refresh step.
+A single-page, passcode-protected attendance dashboard served by GitHub Pages.
+
+The site is static: `index.html`, `app.js`, `app.css`, and one encrypted data file,
+`data.enc.json`. No names or attendance exist anywhere in this repository in readable
+form. The browser downloads the encrypted file and decrypts it locally after the
+correct passcode is entered; until then the page shows only a lock screen.
+
+> The passcode is shared privately and is never stored in this repository.
+>
+> **Testing without real data:** `tools/make_synthetic.py` makes a fake roster. Build it to a
+> scratch path (`-o /tmp/test.enc.json`) with a throwaway passcode and check it with
+> `tools/browser_check.py --enc /tmp/test.enc.json`. Never commit a test build over the live
+> `data.enc.json`.
 
 ## How it works
 
-1. The page loads `config.enc.json`, which is encrypted and holds the published sheet's
-   address and a few settings. The repository contains no names, no attendance, and no
-   sheet link in readable form.
-2. After the correct passcode is entered, the browser decrypts the config (WebCrypto:
-   PBKDF2-HMAC-SHA256, 650,000 iterations, random 16-byte salt → AES-256-GCM, random
-   12-byte IV). A wrong passcode shows a friendly error, and nothing else is fetched.
-3. The page reads the sheet's published tab list (`…/pubhtml`), picks the weekly tabs,
-   downloads each one as CSV (`…/pub?gid=…&single=true&output=csv`, CORS-enabled by
-   Google), and builds the dashboard in the browser with `roll.js`.
-4. **Refresh** reloads the sheet. The header shows "Live from the roll sheet · loaded
-   <time>". If the sheet can't be reached (unpublished, offline), a friendly message
-   appears; after a failed refresh, the data loaded earlier stays on screen.
+| Piece | What it does |
+|---|---|
+| `tools/export_weekly_tabs.py` | Reads an `.xlsx` download of the attendance sheet and writes the main-list check-in CSV plus a counts-only visitor file (both outside the repo). |
+| `tools/build_encrypted.py` | Reads those files, merges duplicate spellings, encrypts, and writes **only** `data.enc.json`. |
+| `tools/names.py` | Shared name normalization used for merging and for de-duplicating visitors. |
+| `index.html` + `app.js` | Lock screen, then in-browser decryption (WebCrypto) and the dashboard. |
+| `tools/check_staged.py` | Pre-commit guard that blocks CSV/XLSX/JSON files, malformed `data.enc.json`, and anything resembling check-in rows. |
+| `tools/browser_check.py` | Headless-Chromium round-trip test that prints aggregate counts only. |
+| `tools/make_synthetic.py` | Generates a fake roster for testing. |
 
-"Keep unlocked until this tab is closed" stores the derived key (not the passcode) in
-`sessionStorage` only. Nothing is written to `localStorage` or cookies. **Lock** clears it.
+**Crypto:** PBKDF2-HMAC-SHA256 (650,000 iterations; minimum 600,000) with a random
+16-byte salt → AES-256-GCM with a random 12-byte IV. `data.enc.json` is
+`{"v":1,"salt":…,"iv":…,"iter":…,"ct":…}` (base64; `ct` includes the GCM tag). A new
+salt and IV are generated on every build.
 
-### Which tabs count
+**Where visitors show:** an "+ N visitors" line on the *Attended* card for the latest
+week, and a small "Visitors per week" row under the weekly-attendance bars (also in each
+bar's tooltip).
 
-- Weekly tabs are the ones named like a date: `Oct 4`, `Sept 20`, `July5`. Other tabs
-  (`Dashboard`, `Visitors`, …) are ignored. A **new Sunday tab is picked up automatically**
-  as soon as it is published, with no code change. The latest 8 count.
-- A tab counts from **12:00 PM Pacific on its own date** (check-ins finish around 11:30
-  AM). Future tabs, and today's tab before noon, are ignored entirely: no absences, streaks,
-  KPIs, or visitors. This uses the Pacific clock whatever the viewer's time zone.
-- Year: a tab's month is taken as this year unless it's later than the current month (then
-  last year).
+**"Keep unlocked until this tab is closed"** stores the derived key (not the passcode)
+in `sessionStorage` only. Nothing is written to `localStorage` or cookies. The **Lock**
+button clears it.
 
-### Rules (same as `tools/export_weekly_tabs.py`, and verified identical)
+**Rules the page applies**
 
-- **Main list:** column B is the checkbox (TRUE, or `x`), and column C is "Last, First"
-  (contains a comma).
-- **Newcomers:** checked-in rows in the "NEW NAMES, NOT YET ON LIST" area (column H checkbox,
-  column I name) and checked-in column C rows without a comma.
-  - If the person is **already on the main list** (that week or an earlier counted week), they
-    count **present** that week, even with an unticked or missing main-list row.
-  - Otherwise they're a **visitor**. Visitors appear **only as a per-week count** (on the
-    Attended card and under the weekly bars). Their names are used only to de-duplicate
-    and count, and are never displayed or kept. They're excluded from the people total,
-    red/yellow/OK, the heatmap, and attendance %.
-- Names that differ only by case, spacing, punctuation, or word order are merged.
-- *Weeks absent* = consecutive missed Sundays counting back from the latest counted week.
-  **Red** = 5 or more in a row, **Yellow** = 3–4, otherwise OK. Weeks before a person's
-  first appearance are *not yet enrolled*, and weeks their name is missing from the sheet
-  are *not on that week's sheet*. Neither counts as an absence.
+- *Weeks absent* = consecutive missed Sundays counting back from the latest week.
+- **Red** = 5 or more in a row. **Yellow** = 3–4 in a row. Everyone else is OK.
+- Weeks before a person first appears on a sheet are *not yet enrolled*, and weeks
+  their name is missing from the sheet after that are *not on that week's sheet*.
+  Neither counts as an absence, and both get their own neutral cell in the heatmap.
 - Attendance % = Sundays attended ÷ Sundays they were on the sheet.
+- Names that differ only by case, spacing, punctuation, or word order are merged.
+- **Visitors** are people checked in from the "NEW NAMES, NOT YET ON LIST" area, or on
+  checkbox rows that aren't on the main list, who are not already on the main list (that
+  week or an earlier one). They are de-duplicated against the main list and within the
+  week using the same name normalization. **Only a per-week count is kept**: their names
+  are never written to any file or put in the encrypted payload. Visitors are left out of
+  the people total, red/yellow/OK, the heatmap, and attendance %. Once a name is added to
+  the main list, that person appears normally from that week on.
+- Someone who is **already on the main list** (that week or any earlier week) but checked
+  in through the newcomer area (or an off-list row) is counted **present** that week, even
+  if their main-list box is unticked or they have no main-list row that week. They are not
+  counted as absent, as a visitor, or as "not on that week's sheet".
+- A cell with `x` is treated as attended.
 
-## Changing the passcode or the sheet link (re-key)
+## One-time setup (on the shared computer)
 
-Both live only inside `config.enc.json`. Re-encrypt and push:
+```sh
+git clone https://github.com/drbuhler/weekly-attendance.git /workspace/weekly-attendance
+cd /workspace/weekly-attendance
+python3 -m venv ~/.venvs/attendance
+~/.venvs/attendance/bin/pip install cryptography openpyxl
+sh tools/install-hooks.sh          # installs the plaintext-data pre-commit guard
+```
+
+## Weekly refresh
+
+Keep roster files in `/workspace/catechumen-dashboard/` (outside this repo), never in it.
 
 ```sh
 cd /workspace/weekly-attendance && git pull
-~/.venvs/attendance/bin/python tools/encrypt_config.py
-#   prompts (hidden) for the published sheet URL (the …/pubhtml link from
-#   File → Share → Publish to the web) and for the new passcode, twice.
-#   Or set ATTENDANCE_SHEET_URL / ATTENDANCE_PASSCODE in the environment instead.
-git add config.enc.json && git commit -m "Update config" && git push
+
+# 1. Export: download the Google Sheet as .xlsx (File → Download → Microsoft Excel)
+#    to /workspace/catechumen-dashboard/catechism-attendance.xlsx, then:
+~/.venvs/attendance/bin/python tools/export_weekly_tabs.py \
+    /workspace/catechumen-dashboard/catechism-attendance.xlsx \
+    /workspace/catechumen-dashboard/weekly_tabs_attendance.csv
+#    Uses the latest 8 dated tabs up to today. It also writes the counts-only file
+#    /workspace/catechumen-dashboard/weekly_tabs_attendance.visitors.csv (week,visitors).
+
+# 2. Encrypt. You'll be prompted for the passcode twice; it is never a command-line argument.
+~/.venvs/attendance/bin/python tools/build_encrypted.py \
+    /workspace/catechumen-dashboard/weekly_tabs_attendance.csv \
+    --title "Catechumen attendance"
+
+# 3. Publish only the encrypted file.
+git add data.enc.json
+git commit -m "Weekly attendance update"
+git push
 ```
 
-Never put the passcode on the command line, and never commit the sheet link in plain text
-(the pre-commit guard blocks it). Old encrypted configs remain in git history and still
-open with their old passcode. If a passcode leaks, also **re-publish the sheet under a new
-link** (unpublish, then publish again) and re-key.
-
-One-time setup on a new machine:
-
-```sh
-git clone https://github.com/drbuhler/weekly-attendance.git && cd weekly-attendance
-python3 -m venv ~/.venvs/attendance && ~/.venvs/attendance/bin/pip install cryptography openpyxl playwright
-sh tools/install-hooks.sh   # plaintext-data / sheet-link pre-commit guard
-```
-
-## Testing
+The build picks up `<csv name>.visitors.csv` automatically when it sits next to the CSV
+(or pass `--visitors PATH`, or `--no-visitors`). It prints aggregate counts (people,
+red/yellow, weekly %, visitors) so you can sanity-check
+them before pushing. GitHub Pages republishes within a minute or two. Optionally,
+before pushing, run a headless round trip (needs `pip install playwright`). It also
+asks for the passcode via the environment and prints counts only:
 
 ```sh
-# Parser parity: roll.js (under Node) vs the Python export on an .xlsx download of the sheet.
-# Counts only. Use --now to test the noon-Pacific rule.
-~/.venvs/attendance/bin/python tools/parity_check.py /path/to/sheet.xlsx --now 2026-10-11T12:00:00-07:00
-
-# Headless browser against the deployed site (counts only; reads the passcode from the env).
 read -rs ATTENDANCE_PASSCODE && export ATTENDANCE_PASSCODE
-~/.venvs/attendance/bin/python tools/browser_check.py --url https://drbuhler.github.io/weekly-attendance/ [--width 390] [--now …]
+~/.venvs/attendance/bin/python tools/browser_check.py --enc data.enc.json
 unset ATTENDANCE_PASSCODE
 ```
 
-The weekly-snapshot tools from the earlier design are kept only for testing:
-`export_weekly_tabs.py` (the reference implementation for the parity check),
-`build_encrypted.py` (shared crypto, plus the old snapshot builder), and `make_synthetic.py`
-(fake roster). The page no longer uses a data snapshot.
+## Passcode guidance
 
-## Privacy notes and caveats
+Anyone can download `data.enc.json` and try passcodes offline, so passcode strength is
+the real protection. Use **4+ random words** (e.g. from a diceware list) or **16+ random
+characters**. Share it privately (never in this repo, an issue, or a commit message),
+and change it if it may have leaked. To change it, rebuild with the new passcode and
+push; older ciphertext stays in git history and still opens with the old passcode.
 
-- **The published sheet is public to anyone who has its link.** The passcode protects
-  the dashboard and hides the link, but anyone holding the link can read the sheet directly.
-  Treat the link as a secret, and unpublish/re-publish it to revoke access.
-- The passcode is the real protection for the config, since anyone can download
-  `config.enc.json` and guess offline. Use 4+ random words or 16+ random characters.
-- Google republishes edits with a delay, typically up to ~5 minutes, so a check-in may take
-  a few minutes to appear even after Refresh.
-- Tab discovery reads Google's `pubhtml` page, which isn't a documented API. If Google
-  changes that page, the dashboard shows its "couldn't load" message and `roll.js`
-  `discoverTabs` needs an update.
-- `.gitignore` blocks CSV/XLSX/JSON exports (only `config.enc.json` is allowed). The
-  pre-commit guard rejects data files, check-in-like rows, and Google Sheets ids/links. Run
-  `python3 tools/check_staged.py --all` to scan everything tracked.
-- `robots.txt` disallows crawling, and the page carries `noindex,nofollow`.
-- The page's Content-Security-Policy only allows connections to this site, `docs.google.com`,
-  and `*.googleusercontent.com` (where Google serves the CSVs).
+## Privacy notes
+
+- `.gitignore` blocks CSV/XLSX/JSON/text exports. Only `data.enc.json` is allowed.
+- The pre-commit guard (`tools/install-hooks.sh`) rejects data files and check-in-like
+  text. Run `python3 tools/check_staged.py --all` to scan every tracked file.
+- `robots.txt` disallows all crawling, and the page carries `noindex,nofollow`.
+- A GitHub Pages site is publicly reachable even when the repository is private.

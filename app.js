@@ -1,11 +1,8 @@
-/* Attendance dashboard. The passcode decrypts config.enc.json in the browser (PBKDF2-SHA256 ->
-   AES-256-GCM); the config says where the published roll sheet lives, and the roster is then read
-   LIVE from that sheet and parsed by roll.js. No data or sheet address is in this repository;
-   nothing renders until the passcode is correct. */
+/* Attendance dashboard: decrypts data.enc.json in the browser (PBKDF2-SHA256 -> AES-256-GCM).
+   No data is present in this file or in index.html; nothing renders until decryption succeeds. */
 (() => {
   "use strict";
-  const CONFIG_URL = "config.enc.json";
-  const DEFAULT_WEEKS = 8;
+  const DATA_URL = "data.enc.json";
   const MIN_ITER = 600000;
   const SS_PREFIX = "wa-key:";
   const LABEL = { P: "Attended", A: "Absent", N: "Not yet enrolled", G: "Not on that week's sheet" };
@@ -16,10 +13,8 @@
   const b64e = (u8) => btoa(String.fromCharCode(...new Uint8Array(u8)));
   const pct = (x) => (x == null ? "–" : Math.round(x * 100) + "%");
 
-  let blob = null;      // encrypted config file
-  let CFG = null;       // decrypted config {pub, weeks, title}
-  let D = null;         // live roster + derived stats
-  let loading = false;
+  let blob = null;      // encrypted file contents
+  let D = null;         // decrypted payload + derived stats
   const ui = { q: "", filter: "all", sort: "name" };
 
   /* ---------- crypto ---------- */
@@ -38,22 +33,21 @@
 
   async function loadBlob() {
     try {
-      const r = await fetch(CONFIG_URL, { cache: "no-store" });
+      const r = await fetch(DATA_URL, { cache: "no-store" });
       if (!r.ok) throw new Error(r.status);
       const j = await r.json();
       if (j.v !== 1 || !j.salt || !j.iv || !j.ct || !(j.iter >= MIN_ITER)) throw new Error("format");
       blob = j;
     } catch (e) {
-      msg("This page couldn't load its settings. Please try again later.");
+      msg("The data file couldn't be loaded. Please try again later.");
       $("#unlockBtn").disabled = true;
       return;
     }
     const saved = sessionStorage.getItem(SS_PREFIX + blob.salt);
     if (saved) {
       msg("Unlocking…", true);
-      let cfg = null;
-      try { cfg = await decryptWithBits(b64d(saved)); } catch { sessionStorage.removeItem(SS_PREFIX + blob.salt); msg(""); }
-      if (cfg) { await start(cfg); return; }
+      try { show(await decryptWithBits(b64d(saved))); return; }
+      catch { sessionStorage.removeItem(SS_PREFIX + blob.salt); msg(""); }
     }
     $("#pass").focus();
   }
@@ -61,76 +55,21 @@
   $("#lockForm").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     if (!blob) return;
-    if (CFG && !D) { $("#unlockBtn").disabled = true; await start(CFG); $("#unlockBtn").disabled = false; return; }
     const input = $("#pass"), btn = $("#unlockBtn");
     const pass = input.value;
     if (!pass) return;
     btn.disabled = true; msg("Unlocking…", true);
-    let cfg = null;
     try {
       const bits = await deriveKeyBits(pass, b64d(blob.salt), blob.iter);
-      cfg = await decryptWithBits(bits);
+      const data = await decryptWithBits(bits);
       if ($("#remember").checked) sessionStorage.setItem(SS_PREFIX + blob.salt, b64e(bits));
       input.value = "";
+      show(data);
     } catch (e) {
       msg("That passcode didn't work. Please check it and try again.");
       input.select();
-      btn.disabled = false;
-      return;
-    }
-    await start(cfg);
-    btn.disabled = false;
+    } finally { btn.disabled = false; }
   });
-
-  /* ---------- live data ---------- */
-  const FAIL_MSG = "Couldn't load the roll sheet right now. It may have been unpublished, or you may be offline. Please try again in a minute.";
-
-  async function fetchText(url) {
-    const r = await fetch(url, { cache: "no-store", credentials: "omit", redirect: "follow" });
-    if (!r.ok) throw new Error("http " + r.status);
-    return r.text();
-  }
-
-  async function loadLive(cfg) {
-    const base = cfg.pub;
-    const html = await fetchText(base + "pubhtml");
-    const tabs = Roll.discoverTabs(html);
-    const weekly = Roll.selectWeeklyTabs(tabs, new Date(), cfg.weeks || DEFAULT_WEEKS);
-    if (!weekly.length) throw new Error("no weekly tabs");
-    const texts = await Promise.all(weekly.map((t) => fetchText(`${base}pub?gid=${encodeURIComponent(t.gid)}&single=true&output=csv`)));
-    texts.forEach((txt, j) => {
-      if (/^\s*<(!doctype|html)/i.test(txt)) throw new Error("not csv");
-      weekly[j].rows = Roll.parseCSV(txt);
-    });
-    const out = Roll.build(weekly);
-    return { title: cfg.title, banner: cfg.banner || "", weeks: out.weeks, people: out.people,
-             unknownMarks: out.unknownMarks, loadedAt: new Date() };
-  }
-
-  async function start(cfg) {
-    CFG = cfg;
-    msg("Loading the roll sheet…", true);
-    try { show(await loadLive(cfg)); }
-    catch (e) {
-      // passcode was right; only the sheet failed. Offer a retry without asking for it again.
-      msg(FAIL_MSG);
-      const pass = $("#pass");
-      pass.required = false; pass.hidden = true; $(".remember").hidden = true;
-      $("#unlockBtn").textContent = "Try again";
-    }
-  }
-
-  async function refresh() {
-    if (loading || !CFG) return;
-    loading = true;
-    const btn = $("#refreshBtn"), note = $("#liveNote");
-    if (btn) { btn.disabled = true; btn.textContent = "Refreshing…"; }
-    try { show(await loadLive(CFG)); }
-    catch (e) {
-      if (note) { note.textContent = FAIL_MSG + " Showing the data loaded earlier."; note.classList.add("warn"); }
-      if (btn) { btn.disabled = false; btn.textContent = "Refresh"; }
-    } finally { loading = false; }
-  }
 
   /* ---------- model ---------- */
   function build(data) {
@@ -170,7 +109,7 @@
   function show(data) {
     D = build(data);
     window.__attendanceSummary = {  // aggregate-only hook used by automated checks
-      people: D.people.length, red: D.red, yellow: D.yellow, ok: D.ok, unknownMarks: D.unknownMarks || 0,
+      people: D.people.length, red: D.red, yellow: D.yellow, ok: D.ok,
       laterWeekOnly: D.people.filter((p) => p.first > 0).length,
       weekly: D.weekly.map((w, j) => ({ date: D.weeks[j].date, present: w.present, onSheet: w.onSheet, pct: w.pct, visitors: w.visitors })),
     };
@@ -178,10 +117,7 @@
     const app = $("#app");
     app.hidden = false;
     document.title = D.title || "Attendance";
-    const keep = { q: ui.q };
     app.innerHTML = shell();
-    if (keep.q) $("#q").value = keep.q;
-    $("#sort").value = ui.sort;
     renderRoster();
     wire();
   }
@@ -197,16 +133,12 @@
     const firstPct = D.weekly.find((w) => w.pct != null)?.pct;
     const delta = L.pct != null && firstPct != null ? Math.round((L.pct - firstPct) * 100) : null;
     const onLatest = D.people.filter((p) => p.w[W - 1] === "P" || p.w[W - 1] === "A").length;
-    const loaded = D.loadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    const updated = D.generated ? fmtDate(D.generated.slice(0, 10), { month: "long", day: "numeric", year: "numeric" }) : "";
     return `
       <div class="top">
         <div><h1>${esc(D.title || "Attendance")}</h1>
-          <div class="sub">${esc(wk[0].label)} – ${esc(wk[W - 1].label)} · ${W} Sundays</div>
-          <div class="live" id="liveNote" role="status"><span class="live-dot" aria-hidden="true"></span>Live from the roll sheet · loaded ${esc(loaded)}</div></div>
-        <div class="top-btns">
-          <button class="btn-ghost" id="refreshBtn" type="button">Refresh</button>
-          <button class="btn-ghost" id="lockBtn" type="button">Lock</button>
-        </div>
+          <div class="sub">${esc(wk[0].label)} – ${esc(wk[W - 1].label)} · ${W} Sundays${updated ? " · updated " + esc(updated) : ""}</div></div>
+        <button class="btn-ghost" id="lockBtn" type="button">Lock</button>
       </div>
       ${D.banner ? `<div class="banner">${esc(D.banner)}</div>` : ""}
       <section class="kpis" aria-label="Summary">
@@ -244,7 +176,7 @@
         </div>
         <div class="grid-wrap"><div class="grid" id="grid" style="--weeks:${W}"></div></div>
       </section>
-      <p class="foot">Weeks absent counts consecutive missed Sundays back from ${esc(wk[W - 1].label)}. Weeks before someone's first sign-in are "not yet enrolled", and weeks their name was missing from the sheet are skipped; neither counts as an absence. Attendance % = Sundays attended ÷ Sundays they were on the sheet.${hasVis ? " Visitors are people who checked in but aren't on the main list yet; they appear only as a weekly count and aren't part of any other figure." : ""} A Sunday's tab is counted from 12:00 PM Pacific that day.${D.unknownMarks ? ` ${D.unknownMarks} unrecognized check mark${D.unknownMarks === 1 ? " was" : "s were"} treated as blank.` : ""}</p>`;
+      <p class="foot">Weeks absent counts consecutive missed Sundays back from ${esc(wk[W - 1].label)}. Weeks before someone's first sign-in are "not yet enrolled", and weeks their name was missing from the sheet are skipped; neither counts as an absence. Attendance % = Sundays attended ÷ Sundays they were on the sheet.${hasVis ? " Visitors are people who checked in but aren't on the main list yet; they appear only as a weekly count and aren't part of any other figure." : ""}</p>`;
   }
 
   function chip(v, label, n) { return `<button type="button" class="chip" data-filter="${v}" aria-pressed="${ui.filter === v}">${label}<b>${n}</b></button>`; }
@@ -305,10 +237,9 @@
   }
   function closeDetails() { const m = $("#modal"); if (m.hidden) return; m.hidden = true; m._return?.focus?.(); }
 
-  let appWired = false;
   function wire() {
     const app = $("#app");
-    if (!appWired) { appWired = true; app.addEventListener("click", (e) => {
+    app.addEventListener("click", (e) => {
       const n = e.target.closest("[data-id]");
       if (n) return openDetails(+n.dataset.id);
       const c = e.target.closest("[data-filter]");
@@ -317,11 +248,10 @@
         app.querySelectorAll("[data-filter]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.filter === ui.filter));
         renderRoster();
       }
-    }); }
+    });
     let t;
     $("#q").addEventListener("input", (e) => { clearTimeout(t); t = setTimeout(() => { ui.q = e.target.value; renderRoster(); }, 80); });
     $("#sort").addEventListener("change", (e) => { ui.sort = e.target.value; renderRoster(); });
-    $("#refreshBtn").addEventListener("click", refresh);
     $("#lockBtn").addEventListener("click", () => {
       Object.keys(sessionStorage).filter((k) => k.startsWith(SS_PREFIX)).forEach((k) => sessionStorage.removeItem(k));
       location.reload();
