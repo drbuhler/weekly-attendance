@@ -19,19 +19,25 @@ in through the newcomer area / an off-list row is counted PRESENT that week, whe
 main-list box that week is unticked or they have no main-list row that week. They are not a
 visitor and not "not on that week's sheet".
 
-Weekly tabs are sheets named like "Oct 4" / "Sept 20" / "July5". By default the latest 8
-whose date is not in the future are used (--weeks N, --through YYYY-MM-DD, or --tabs ...).
+Weekly tabs are sheets named like "Oct 4" / "Sept 20" / "July5". By default the latest 8 that
+have "happened" are used: a tab counts from 12:00 PM Pacific on its own date (check-ins finish
+around 11:30 AM), so future tabs and today's tab before noon are ignored entirely. Override with
+--now (an ISO date-time), --through YYYY-MM-DD (inclusive), --weeks N, or --tabs ...
+This is the same rule the live page (roll.js) applies.
 The attendance CSV holds real names: keep it outside the repo (the script refuses otherwise).
 """
 import argparse, csv, datetime as dt, os, re, sys
 
 import openpyxl
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from names import name_key  # noqa: E402
 
 MONTHS = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7,
           "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+PACIFIC = ZoneInfo("America/Los_Angeles")
+CUTOFF_HOUR = 12
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
@@ -58,7 +64,8 @@ def main():
     ap.add_argument("out_csv")
     ap.add_argument("--visitors-out", help="visitor-count file (default: <out_csv>.visitors.csv)")
     ap.add_argument("--weeks", type=int, default=8)
-    ap.add_argument("--through", help="last Sunday to include (default: today)")
+    ap.add_argument("--through", help="last tab date to include, inclusive (overrides the noon rule)")
+    ap.add_argument("--now", help="pretend the current time is this ISO date-time (for testing)")
     ap.add_argument("--tabs", nargs="+", help="explicit tab names, in order (overrides --weeks)")
     args = ap.parse_args()
 
@@ -67,12 +74,20 @@ def main():
     for p in (out, vout):
         if p.startswith(REPO + os.sep):
             sys.exit("Refusing to write roster files inside the repo. Choose a path outside it.")
-    today = dt.date.fromisoformat(args.through) if args.through else dt.date.today()
+    now = dt.datetime.fromisoformat(args.now) if args.now else dt.datetime.now(dt.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=PACIFIC)
+    now_pt = now.astimezone(PACIFIC)
+    if args.through:
+        today = through = dt.date.fromisoformat(args.through)
+    else:
+        today = now_pt.date()
+        through = today if now_pt.hour >= CUTOFF_HOUR else today - dt.timedelta(days=1)
     wb = openpyxl.load_workbook(args.xlsx, data_only=True, read_only=True)
     if args.tabs:
         tabs = args.tabs
     else:
-        dated = sorted((d, n) for n in wb.sheetnames if (d := tab_date(n, today)) and d <= today)
+        dated = sorted((d, n) for n in wb.sheetnames if (d := tab_date(n, today)) and d <= through)
         tabs = [n for _, n in dated[-args.weeks:]]
     if not tabs:
         sys.exit("No weekly tabs found.")
