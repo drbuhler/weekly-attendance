@@ -184,6 +184,19 @@ def main():
                 cp = os.path.join(args.shots, args.prefix + "red-last-attended-column.png")
                 page.screenshot(path=cp, clip=box, full_page=True)
                 res["crop"] = cp
+            res["absences"] = {k: s.get(k) for k in ("window", "redAbsences", "yellowAbsences", "absentGtStreak")}
+            res["labels"] = page.evaluate("""(() => { const t = (q) => [...document.querySelectorAll(q)].map(e => e.textContent.trim().replace(/\\s+/g, ' '));
+                const nums = (q) => [...document.querySelectorAll(q)].map(td => +td.textContent).sort((x, y) => y - x);
+                const chips = [...document.querySelectorAll('.chip')];
+                return { kpi: t('.kpi .k'), panels: t('.panel header h2'), panel_cols: t('.panel thead th:last-child'),
+                         chips: chips.map(c => c.firstChild ? c.firstChild.textContent : ''),
+                         chip_clipped: chips.filter(c => c.scrollWidth > c.clientWidth + 1).length,
+                         chip_rows: new Set(chips.map(c => Math.round(c.getBoundingClientRect().top))).size,
+                         red_col: nums('.panel.red tbody td.num'), yellow_col: nums('.panel.amber tbody td.num'),
+                         pill_red: document.querySelector('.panel.red .linkname') ? (document.querySelector('.panel.red .linkname').click(), document.querySelector('#modalBody .pill')?.textContent || document.querySelector('.pill')?.textContent) : null,
+                         page_hscroll: document.documentElement.scrollWidth > innerWidth }; })()""")
+            if page.locator(".modal-x").count() and page.locator(".modal-x").is_visible():
+                page.click(".modal-x")
             res["celebration_shown"] = page.locator(".celebrate").count() > 0
             res["name_check_section"] = page.locator(".namecheck").count() > 0
             res["error_page_shown"] = page.locator("#app").is_hidden()
