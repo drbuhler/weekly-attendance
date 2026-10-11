@@ -58,7 +58,7 @@ def status_counts(codes):
             if c == "A": s += 1
             elif c == "G": continue
             else: break
-        red += s >= 5; yellow += 3 <= s <= 4
+        red += s >= 6; yellow += 4 <= s <= 5
     return red, yellow, len(codes) - red - yellow
 
 
@@ -111,7 +111,7 @@ def main():
             with open(os.path.join(tmp, "990001.csv"), "w", newline="") as f:
                 csv.writer(f, lineterminator="\r\n").writerows(hrows)
         json.dump(tabs, open(os.path.join(tmp, "tabs.json"), "w"))
-        js = json.loads(subprocess.run(["node", "-e", NODE_SNIPPET, os.path.join(ROOT, "assets", "roll.4.js"), tmp, a.now],
+        js = json.loads(subprocess.run(["node", "-e", NODE_SNIPPET, os.path.join(ROOT, "assets", "roll.5.js"), tmp, a.now],
                                        check=True, capture_output=True, text=True).stdout)
         with open(out_csv, newline="") as f:
             first_tab = next(csv.reader(f))[1]

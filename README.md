@@ -36,7 +36,8 @@ Nothing readable is in this repository: the page decrypts `data.enc.json` in the
 - **Newcomers** (NEW NAMES area H/I, or write-ins in C without a comma) count only as a weekly
   **Visitors** number. They are never named and are never moved onto the main list. A newcomer
   entry for someone already on the main list counts them present.
-- **Red** = 5+ Sundays missed in a row; **Yellow** = 3–4.
+- **Red (needs follow up)** = 6+ Sundays missed in a row; **Yellow (may need attention)** = 4–5;
+  **On track** = 0–3. The lists show "Absences out of the last 8 weeks" (all misses in the window).
 - **Last seen:** the most recent Sunday attended, from the loaded weeks or, before them, the
   sheet's older record: the master grids `Attendance 0525-0226`, `0301` and `May 17` (since May
   2025), the summer tabs, and the weekly tabs from Aug 9. That older record does not change, so
@@ -86,24 +87,29 @@ It must be published: **File → Share → Publish to web → Entire document �
 names, without the passcode. The passcode protects this dashboard and that link, not the sheet
 itself. Google updates the published copy about every 5 minutes.
 
-### Apps Script (`tools/weekly_tab.gs`)
+### Weekly tabs (by hand)
 
-Paste the file into **Extensions → Apps Script**, save, and run `setupAttendanceSheet` once.
-After that it runs `weeklyUpdate` every **Sunday at about 3 PM Pacific**. Each run:
+The Apps Script (`tools/weekly_tab.gs`) is **retired**; the file stays for reference only. Martha
+copies the previous Sunday's tab by hand and names it like `Oct 11`. A tab counts from 12:00 PM
+Pacific on its Sunday; future tabs are ignored. Nobody hides old tabs now, so `History` isn't
+needed. If it exists, the dashboard still reads it. `Archive` is optional too.
 
-1. **Archive:** names on the previous Sunday's tab but not on the newest are added to `Archive`
-   with their week history. Martha picks a **Reason** (Baptized / Chrismated / Washed out / Moved /
-   Other).
-2. **Comebacks:** an archived person back on the newest tab gets a `Returned` date.
-3. **New tab:** creates next Sunday's tab as a copy, with check boxes and newcomer names cleared.
-4. **History:** weekly tabs (from `Aug 9` on, so the `May 17` master grid and the summer tabs are
-   left alone) 6+ weeks old are copied to `History`, verified, then hidden. A tab is never
-   hidden if its copy failed. Published pages leave hidden tabs out, so the dashboard reads those
-   weeks from `History`.
-5. **Name check:** rewrites the `Name check` tab. Pairs listed on the `Name check exceptions` tab
-   (two names per row, e.g. a father and son) are skipped.
+### Follow-ups tab (optional, kept by hand)
 
-Tab layouts written by the script (keep `History` and `Archive` visible and published):
+A tab named **`Follow-ups`** (visible and published), header in row 1:
+
+| A `Name` | B `Follow up action taken` | C `Date` | D `Note` |
+| --- | --- | --- | --- |
+| `Lastname, Firstname` as on the list (any order/case works) | checkbox | date of the follow-up | optional text |
+
+A ticked row puts ✓ and the date next to that person in the Red list. Tap it, or open the person,
+to see the note. Names match the same way as everywhere else: case, spacing and word order are
+ignored, and old spellings follow the confirmed renames. With several ticked rows for one person,
+the newest date wins. Unticked rows are ignored. If the tab is missing or its headers aren't
+recognised, the dashboard just shows no check marks. The dashboard never writes to the sheet.
+
+Optional tab layouts (keep any you use visible and published):
+
 
 | Tab | Columns |
 | --- | --- |

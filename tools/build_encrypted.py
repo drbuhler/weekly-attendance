@@ -161,8 +161,8 @@ def summarize(weeks, people):
                 continue
             else:
                 break
-        red += streak >= 5
-        yellow += 3 <= streak <= 4
+        red += streak >= 6
+        yellow += 4 <= streak <= 5
     lines = [f"people: {len(people)}  red: {red}  yellow: {yellow}  ok: {len(people) - red - yellow}",
              "later-week-only (not on first week's sheet): "
              f"{sum(p['w'][0] == 'N' for p in people)}"]

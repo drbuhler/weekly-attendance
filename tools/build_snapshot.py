@@ -48,10 +48,10 @@ def load_overrides(path):
 PUB_RE = re.compile(r"^https://docs\.google\.com/spreadsheets/d/e/(2PACX-[A-Za-z0-9_-]{20,})(?:/[^?#]*)?(?:[?#].*)?$")
 
 
-def archive_rows(xlsx):
-    """The 'Archive' tab (written by tools/weekly_tab.gs) as text rows, like its published CSV."""
+def archive_rows(xlsx, match=lambda n: n.strip().lower() == "archive"):
+    """An optional tab ('Archive' by default) as text rows, like its published CSV; [] if absent."""
     wb = openpyxl.load_workbook(xlsx, data_only=True, read_only=True)
-    ws = next((wb[n] for n in wb.sheetnames if n.strip().lower() == "archive"), None)
+    ws = next((wb[n] for n in wb.sheetnames if match(n)), None)
     if ws is None:
         return []
     def txt(v):
@@ -119,6 +119,8 @@ def main():
             if name_key(p["n"]) in marked:
                 p["b"] = 1
         archive = archive_rows(xlsx)
+        # optional hand-kept 'Follow-ups' tab (Name | Follow up action taken | Date | Note); None if absent
+        followups = archive_rows(xlsx, lambda n: re.fullmatch(r"\s*follow[\s-]*ups?\s*", n, re.I) is not None) or None
         # older attendance (master grids, summer tabs, weekly tabs) for "Last seen <Mon YYYY>"
         wb = openpyxl.load_workbook(xlsx, data_only=True, read_only=True)
         roster = [p["n"] for p in people if p["w"][-1] in "PA"]
@@ -131,7 +133,7 @@ def main():
 
     payload = {"v": 1, "title": args.title, "banner": "",
                "generated": dt.datetime.now().astimezone().isoformat(timespec="minutes"),
-               "weeks": weeks, "people": people, "archive": archive, "older": older, "overrides": ov_block,
+               "weeks": weeks, "people": people, "archive": archive, "followups": followups, "older": older, "overrides": ov_block,
                "live": {"pub": base, "weeks": args.weeks}}
     blob = be.encrypt(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
                       passcode, args.iterations)

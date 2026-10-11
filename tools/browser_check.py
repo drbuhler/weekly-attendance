@@ -40,6 +40,8 @@ def main():
     ap.add_argument("--history-csv")
     ap.add_argument("--hide", default="", help="history scenario: comma-separated tab names to drop from the tab list, as if hidden")
     ap.add_argument("--archive-csv", help="inject an Archive tab with this CSV (normal/history scenarios)")
+    ap.add_argument("--followups-csv", help="inject a 'Follow-ups' tab with this CSV (normal/history scenarios)")
+    ap.add_argument("--followups-http", type=int, default=200, help="HTTP status for the injected Follow-ups CSV (e.g. 500)")
     ap.add_argument("--blur", action="store_true", help="blur every name in screenshots")
     ap.add_argument("--full", action="store_true", help="full-page unlocked screenshot (Name check open)")
     ap.add_argument("--probe", help="report the last-attended texts shown for this one name (the name itself is not printed)")
@@ -74,7 +76,7 @@ def main():
     exe = os.environ.get("CHROME") or shutil.which("google-chrome") or shutil.which("chromium")
     mobile = args.width < 600
     res = {"scenario": args.scenario, "width": args.width, "now": args.now or "real clock"}
-    hist_gid, arc_gid = "990001", "990002"
+    hist_gid, arc_gid, fu_gid = "990001", "990002", "990003"
 
     def google(route):
         req = route.request
@@ -98,6 +100,8 @@ def main():
                 body = r.text()
                 if args.archive_csv:
                     body += f'<script>items.push({{name: "Archive", pageUrl: "x", gid: "{arc_gid}",initialSheet: false}});</script>'
+                if args.followups_csv:
+                    body += f'<script>items.push({{name: "Follow-ups", pageUrl: "x", gid: "{fu_gid}",initialSheet: false}});</script>'
                 if sc != "history":
                     return route.fulfill(response=r, body=body)
                 for name in filter(None, (x.strip() for x in args.hide.split(","))):
@@ -107,6 +111,9 @@ def main():
             if args.archive_csv and f"gid={arc_gid}&" in req.url:
                 return route.fulfill(status=200, headers={"access-control-allow-origin": "*", "content-type": "text/csv"},
                                      body=open(args.archive_csv, encoding="utf-8").read())
+            if args.followups_csv and f"gid={fu_gid}&" in req.url:
+                return route.fulfill(status=args.followups_http, headers={"access-control-allow-origin": "*", "content-type": "text/csv"},
+                                     body=open(args.followups_csv, encoding="utf-8").read())
             if sc == "history" and f"gid={hist_gid}&" in req.url:
                 return route.fulfill(status=200, headers={"access-control-allow-origin": "*", "content-type": "text/csv"},
                                      body=open(args.history_csv, encoding="utf-8").read())
@@ -121,7 +128,7 @@ def main():
             page = ctx.new_page()
             if args.now:
                 page.clock.install(time=datetime.fromisoformat(args.now))
-            if args.scenario != "normal" or args.archive_csv:
+            if args.scenario != "normal" or args.archive_csv or args.followups_csv:
                 page.route(GOOGLE, google)
             errors = []
             page.on("pageerror", lambda e: errors.append("pageerror"))
@@ -185,6 +192,24 @@ def main():
                 page.screenshot(path=cp, clip=box, full_page=True)
                 res["crop"] = cp
             res["absences"] = {k: s.get(k) for k in ("window", "redAbsences", "yellowAbsences", "absentGtStreak")}
+            res["thresholds"] = s.get("thresholds")
+            res["followups"] = s.get("followups")
+            res["followups_ui"] = page.evaluate("""(() => { const b = document.querySelectorAll('.panel.red .fu');
+                const first = b[0]; let modal = null;
+                if (first) { first.click(); const n = document.querySelector('#modalBody .fu-note'); modal = { shown: !!n, has_date: !!(n && /Followed up \\w{3} \\d/.test(n.textContent)), has_note: !!(n && n.textContent.includes(' · ')) }; document.querySelector('.modal-x').click(); }
+                return { red_marks: b.length, marks_elsewhere: document.querySelectorAll('.fu').length - b.length,
+                         with_title: [...b].filter(x => (x.title || '').startsWith('Followed up')).length, modal }; })()""")
+            res["spark_labels"] = page.evaluate("""(() => { const sp = [...document.querySelectorAll('.spark-l span')]; const bars = document.querySelectorAll('.spark i').length;
+                const vis = (e) => [...e.querySelectorAll('b')].find(b => getComputedStyle(b).display !== 'none') || e;
+                const r = sp.map(x => vis(x)?.getBoundingClientRect()).filter(Boolean);
+                let overlap = 0; for (let i = 1; i < r.length; i++) if (r[i].left < r[i - 1].right - 0.5) overlap++;
+                return { bars, labels: sp.length, texts: sp.map(x => vis(x)?.textContent), overlaps: overlap,
+                         clipped: sp.filter(x => { const b = vis(x).getBoundingClientRect(), c = x.getBoundingClientRect(); return b.width > c.width + 1; }).length,
+                         visitors_label: document.querySelector('.spark-v .lbl')?.textContent || null }; })()""")
+            res["order"] = page.evaluate("""(() => ({ panels: [...document.querySelectorAll('.panels .panel')].map(p => p.querySelector('h2').textContent + (p.tagName === 'DETAILS' ? (p.open ? ' [open]' : ' [collapsed]') : '')),
+                kpi: [...document.querySelectorAll('.kpi .k')].map(k => k.textContent),
+                chips: [...document.querySelectorAll('.chip')].map(c => c.firstChild.textContent),
+                hints: [...document.querySelectorAll('.panels .hint, .kpi .s')].map(h => h.textContent).filter(t => /in a row/.test(t)) }))()""")
             res["labels"] = page.evaluate("""(() => { const t = (q) => [...document.querySelectorAll(q)].map(e => e.textContent.trim().replace(/\\s+/g, ' '));
                 const nums = (q) => [...document.querySelectorAll(q)].map(td => +td.textContent).sort((x, y) => y - x);
                 const chips = [...document.querySelectorAll('.chip')];
@@ -202,7 +227,7 @@ def main():
             res["error_page_shown"] = page.locator("#app").is_hidden()
             if args.shots:
                 if args.blur:
-                    page.add_style_tag(content=".linkname,.nm,.cel-list b,.namecheck td:not(:last-child),.plist td:first-child,h3#mName{filter:blur(6px)}")
+                    page.add_style_tag(content=".linkname,.nm,.cel-list b,.namecheck td:not(:last-child),h3#mName{filter:blur(6px)}")
                 path = os.path.join(args.shots, args.prefix + "unlocked-top.png")
                 page.evaluate("window.scrollTo(0,0)")
                 if args.full:
