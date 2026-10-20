@@ -23,7 +23,8 @@ Weekly tabs are sheets named like "Oct 4" / "Sept 20" / "July5". By default the 
 have "happened" are used: a tab counts from 12:00 PM Pacific on its own date (check-ins finish
 around 11:30 AM), so future tabs and today's tab before noon are ignored entirely. Override with
 --now (an ISO date-time), --through YYYY-MM-DD (inclusive), --weeks N, or --tabs ...
-This is the same rule the live page (roll.js) applies.
+The live page (assets/roll.6.js) uses the same noon rule but a six-month date window instead of
+this default of 8, and it does not read --weeks from the encrypted snapshot.
 The attendance CSV holds real names: keep it outside the repo (the script refuses otherwise).
 """
 import argparse, csv, datetime as dt, os, re, sys

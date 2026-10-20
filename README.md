@@ -17,16 +17,19 @@ Nothing readable is in this repository: the page decrypts `data.enc.json` in the
 4. **Never an error page.** If the live read fails for any reason (Google down, CORS, rate limit,
    timeout after 20 s, a layout change, implausible numbers), the snapshot stays on screen with a
    note. A failed Refresh keeps the data that was already loaded.
-5. **Cache-safe deploys.** The page assets are versioned (`assets/app.3.js`, `assets/roll.3.js`,
-   `assets/app.3.css`). The older versions (`assets/*.2.*` and the root `app.js` / `app.css`) are
-   kept, so a browser holding a cached old `index.html` keeps working. A new change gets new
-   file names (`*.4.*`). **Never delete `data.enc.json` or old assets.**
+5. **Cache-safe deploys.** The page assets are versioned (`assets/app.6.js`, `assets/roll.6.js`,
+   `assets/app.6.css`). The older versions (`assets/*.2.*` through `assets/*.5.*`, and the root
+   `app.js` / `app.css`) are kept, so a browser holding a cached old `index.html` keeps working.
+   A new change gets new file names (`*.7.*`). **Never delete `data.enc.json` or old assets.**
 
 ### Rules (the same for the snapshot and the live data)
 
-- **Weekly tabs** are named like `Oct 4` / `Sept 20`. The latest 8 that have happened are used.
-  A Sunday's tab counts only from **12:00 PM Pacific** that day. Future tabs, and today's tab
-  before noon, are ignored entirely.
+- **Weekly tabs** are named like `Oct 4` / `Sept 20`. The live page uses every one that has
+  happened in the **last 6 months** (the same calendar day, six months ago, Pacific time, through
+  the latest Sunday that has reached 12:00 PM). A Sunday's tab counts only from **12:00 PM Pacific**
+  that day. Future tabs, and today's tab before noon, are ignored entirely. The week count stored
+  in the encrypted snapshot is not a cap: unhiding older weekly tabs shows them on the next load
+  without rebuilding the snapshot. The chart and the roster each keep a label on every week.
 - **Main list:** column B check box, column C `Last, First`.
 - **Canonical roster:** only people on the **newest counted tab** are tracked (its main list, or
   checked in through the newcomer area that day while already on the list). Everyone else
@@ -37,7 +40,8 @@ Nothing readable is in this repository: the page decrypts `data.enc.json` in the
   **Visitors** number. They are never named and are never moved onto the main list. A newcomer
   entry for someone already on the main list counts them present.
 - **Red (needs follow up)** = 6+ Sundays missed in a row; **Yellow (may need attention)** = 4–5;
-  **On track** = 0–3. The lists show "Absences out of the last 8 weeks" (all misses in the window).
+  **On track** = 0–3. The lists show "Absences out of the last N weeks" (all misses in the loaded
+  window). A longer window does not change those cut-offs.
 - **Last seen:** the most recent Sunday attended, from the loaded weeks or, before them, the
   sheet's older record: the master grids `Attendance 0525-0226`, `0301` and `May 17` (since May
   2025), the summer tabs, and the weekly tabs from Aug 9. That older record does not change, so
@@ -50,8 +54,9 @@ Nothing readable is in this repository: the page decrypts `data.enc.json` in the
   - In the red, yellow and Everyone lists, an attendance inside the loaded weeks shows as `Sep 6`
     and an older one as `Last seen Mar 2026`. `never` means no attendance anywhere in the sheet.
 - **Baptized marker:** a check box (or `x` / `Baptized`) in **column D** on the newest tab. Marked
-  people are shown with a "baptized" tag but are left out of red/yellow and the weekly counts. The
-  weekly script highlights them so Martha can remove them.
+  people are shown with a "baptized" tag but are left out of red/yellow and the weekly counts.
+- **Baptized tab** (optional, see below): a blue cross with the date on hover or tap. Same exclusion
+  from red/yellow and the weekly counts. Leaving the roster is not treated as a baptism.
 - **Archive:** people who left the list (see the script below). The dashboard shows
   "Baptized this year" (and chrismated), plus recent baptisms. A tracked person who is also on the
   Archive is a **comeback**: any weeks missing from the loaded tabs are restored from their
@@ -108,6 +113,33 @@ ignored, and old spellings follow the confirmed renames. With several ticked row
 the newest date wins. Unticked rows are ignored. If the tab is missing or its headers aren't
 recognised, the dashboard just shows no check marks. The dashboard never writes to the sheet.
 
+### Baptized tab (optional, kept by hand)
+
+A tab named **`Baptized`** (that exact word, visible and published). Row 1 headers:
+
+| A `Name` | B `Baptized date` |
+| --- | --- |
+| `Last, First` as on the roster | `4/12/2026` (also `2026-04-12` or `Apr 12, 2026`) |
+
+Dionysius adds the names himself, in batches (for example at Pascha and Pentecost). Nothing is
+filled in until he does. There is no checkbox: every non-empty name row counts.
+
+- Matching ignores case, extra spaces, and word order, so `Last, First` and `First Last` are the
+  same person. Old spellings follow the confirmed renames, the same way Follow-ups does.
+- A match draws a **blue cross** beside the name. Hover the cross, or tap it, to see the date.
+- That person is left out of Red, Yellow, and the weekly attendance counts — the same exclusion as
+  a column D Baptized mark. They are not counted as a catechumen.
+- If they are already off the newest Sunday's tab but still have a check-in somewhere in the
+  six-month window, they stay on screen with the cross and are still left out of Red and Yellow.
+  Someone who dropped off the roster is **not** marked baptized unless their name is on this tab.
+- Column order does not matter; the headers do. `Name` is required. The date column header should
+  contain "date" or "baptized" (the header `Baptized date` does).
+- If the tab is missing, empty, or those headers aren't there, the page loads as before and no
+  crosses appear. A problem reading the tab does not take down the rest of the dashboard.
+- The dashboard never writes to the sheet. No snapshot rebuild is required for the crosses to
+  show up on the live view; the page reads the published tab itself. The next snapshot rebuild
+  (`tools/build_snapshot.py`) will store a copy for the fallback.
+
 Optional tab layouts (keep any you use visible and published):
 
 
@@ -116,6 +148,7 @@ Optional tab layouts (keep any you use visible and published):
 | `History` | `Date` (text yyyy-mm-dd of the Sunday) · `Section` (`main` = B/C pair, `new` = H/I pair) · `Name` · `Checked` (TRUE/FALSE/x as on the tab) |
 | `Archive` | `Name` · `Left on` · `Last on list` · `Reason` (dropdown) · `First seen` · `Sundays on list` · `Sundays present` · `Returned` · `Week history` (`2026-08-16:P 2026-08-23:A …`) · `Archived on` |
 | `Name check` | `Name` · `Where` · `Looks like` · `Where` · `Why` · `Checked on` |
+| `Baptized` | `Name` · `Baptized date` (`4/12/2026`) |
 
 The menu **Attendance → Fix Dashboard session counts shown as dates** turns cells in columns E and
 G of the sheet's own `Dashboard` tab that Sheets read as dates (e.g. `6/15`) into text (`6 of 15`).

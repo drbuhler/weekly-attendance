@@ -42,6 +42,8 @@ def main():
     ap.add_argument("--archive-csv", help="inject an Archive tab with this CSV (normal/history scenarios)")
     ap.add_argument("--followups-csv", help="inject a 'Follow-ups' tab with this CSV (normal/history scenarios)")
     ap.add_argument("--followups-http", type=int, default=200, help="HTTP status for the injected Follow-ups CSV (e.g. 500)")
+    ap.add_argument("--baptized-csv", help="inject a 'Baptized' tab with this CSV (normal/history scenarios)")
+    ap.add_argument("--baptized-http", type=int, default=200, help="HTTP status for the injected Baptized CSV (e.g. 500)")
     ap.add_argument("--blur", action="store_true", help="blur every name in screenshots")
     ap.add_argument("--full", action="store_true", help="full-page unlocked screenshot (Name check open)")
     ap.add_argument("--probe", help="report the last-attended texts shown for this one name (the name itself is not printed)")
@@ -76,7 +78,7 @@ def main():
     exe = os.environ.get("CHROME") or shutil.which("google-chrome") or shutil.which("chromium")
     mobile = args.width < 600
     res = {"scenario": args.scenario, "width": args.width, "now": args.now or "real clock"}
-    hist_gid, arc_gid, fu_gid = "990001", "990002", "990003"
+    hist_gid, arc_gid, fu_gid, bap_gid = "990001", "990002", "990003", "990004"
 
     def google(route):
         req = route.request
@@ -102,6 +104,8 @@ def main():
                     body += f'<script>items.push({{name: "Archive", pageUrl: "x", gid: "{arc_gid}",initialSheet: false}});</script>'
                 if args.followups_csv:
                     body += f'<script>items.push({{name: "Follow-ups", pageUrl: "x", gid: "{fu_gid}",initialSheet: false}});</script>'
+                if args.baptized_csv:
+                    body += f'<script>items.push({{name: "Baptized", pageUrl: "x", gid: "{bap_gid}",initialSheet: false}});</script>'
                 if sc != "history":
                     return route.fulfill(response=r, body=body)
                 for name in filter(None, (x.strip() for x in args.hide.split(","))):
@@ -114,6 +118,9 @@ def main():
             if args.followups_csv and f"gid={fu_gid}&" in req.url:
                 return route.fulfill(status=args.followups_http, headers={"access-control-allow-origin": "*", "content-type": "text/csv"},
                                      body=open(args.followups_csv, encoding="utf-8").read())
+            if args.baptized_csv and f"gid={bap_gid}&" in req.url:
+                return route.fulfill(status=args.baptized_http, headers={"access-control-allow-origin": "*", "content-type": "text/csv"},
+                                     body=open(args.baptized_csv, encoding="utf-8").read())
             if sc == "history" and f"gid={hist_gid}&" in req.url:
                 return route.fulfill(status=200, headers={"access-control-allow-origin": "*", "content-type": "text/csv"},
                                      body=open(args.history_csv, encoding="utf-8").read())
@@ -128,7 +135,7 @@ def main():
             page = ctx.new_page()
             if args.now:
                 page.clock.install(time=datetime.fromisoformat(args.now))
-            if args.scenario != "normal" or args.archive_csv or args.followups_csv:
+            if args.scenario != "normal" or args.archive_csv or args.followups_csv or args.baptized_csv:
                 page.route(GOOGLE, google)
             errors = []
             page.on("pageerror", lambda e: errors.append("pageerror"))
@@ -194,6 +201,27 @@ def main():
             res["absences"] = {k: s.get(k) for k in ("window", "redAbsences", "yellowAbsences", "absentGtStreak")}
             res["thresholds"] = s.get("thresholds")
             res["followups"] = s.get("followups")
+            res["baptized_tab"] = s.get("baptizedTab")
+            res["crosses"] = s.get("crosses")
+            res["enroll_first_dates"] = s.get("enrollFirstDates")
+            res["week_labels"] = page.evaluate("""(() => ({
+                roster: [...document.querySelectorAll('.row.head .wk')].map(e => e.textContent.trim()),
+                roster_hidden: [...document.querySelectorAll('.row.head .wk')].filter(e => getComputedStyle(e).display === 'none').length,
+                n_cells: document.querySelectorAll('#grid i.sq.c-N').length
+            }))()""")
+            res["cross_ui"] = page.evaluate("""(() => {
+                const b = [...document.querySelectorAll('#grid .bx')];
+                let modal = null;
+                if (b[0]) {
+                    b[0].click();
+                    const n = document.querySelector('#modalBody .bx-note');
+                    modal = { shown: !!n, has_date: !!(n && /\\d{4}/.test(n.textContent)), says_baptized: !!(n && n.textContent.includes('Baptized')) };
+                    document.querySelector('.modal-x').click();
+                }
+                return { n: b.length, titled: b.filter(x => (x.title || '').startsWith('Baptized')).length,
+                         dated: b.filter(x => /\\d/.test(x.title || '')).length,
+                         tags: document.querySelectorAll('#grid .tag').length, modal };
+            })()""")
             res["followups_ui"] = page.evaluate("""(() => { const b = document.querySelectorAll('.panel.red .fu');
                 const first = b[0]; let modal = null;
                 if (first) { first.click(); const n = document.querySelector('#modalBody .fu-note'); modal = { shown: !!n, has_date: !!(n && /Followed up \\w{3} \\d/.test(n.textContent)), has_note: !!(n && n.textContent.includes(' · ')) }; document.querySelector('.modal-x').click(); }
