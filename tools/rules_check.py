@@ -331,7 +331,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="rules-")
     os.chmod(tmp, 0o700)
     try:
-        proc = subprocess.run(["node", "-e", NODE, os.path.join(ROOT, "assets", "roll.7.js"), tmp],
+        proc = subprocess.run(["node", "-e", NODE, os.path.join(ROOT, "assets", "roll.8.js"), tmp],
                               cwd=ROOT, capture_output=True, text=True)
         if proc.returncode != 0:
             sys.stderr.write(proc.stderr[-1000:])

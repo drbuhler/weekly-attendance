@@ -247,7 +247,10 @@ def main():
                          chip_rows: new Set(chips.map(c => Math.round(c.getBoundingClientRect().top))).size,
                          red_col: nums('.panel.red tbody td.num'), yellow_col: nums('.panel.amber tbody td.num'),
                          pill_red: document.querySelector('.panel.red .linkname') ? (document.querySelector('.panel.red .linkname').click(), document.querySelector('#modalBody .pill')?.textContent || document.querySelector('.pill')?.textContent) : null,
-                         page_hscroll: document.documentElement.scrollWidth > innerWidth }; })()""")
+                         page_hscroll: document.documentElement.scrollWidth > innerWidth,
+                         grid_scroll: (() => { const g = document.querySelector('.grid-wrap'); if (!g) return null;
+                           const before = g.scrollLeft; g.scrollLeft = 99999; const moved = g.scrollLeft > before; g.scrollLeft = before;
+                           return { scrollable: g.scrollWidth > g.clientWidth, moves: moved, weeks: getComputedStyle(document.getElementById('grid')).getPropertyValue('--weeks').trim() }; })() }; })()""")
             if page.locator(".modal-x").count() and page.locator(".modal-x").is_visible():
                 page.click(".modal-x")
             res["celebration_shown"] = page.locator(".celebrate").count() > 0
