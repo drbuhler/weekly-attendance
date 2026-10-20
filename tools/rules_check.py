@@ -33,6 +33,8 @@ function sundays(a, b) {
   return out;
 }
 const noon = new Date("2026-10-20T15:00:00-07:00");
+{ const cyc = R.selectWeeklyTabs([{name:"May 10",gid:"a"},{name:"May 17",gid:"b"},{name:"May 17 Self-Check",gid:"c"},{name:"May 31 self-check",gid:"d"},{name:"Oct 18",gid:"e"}], noon, 0, R.CYCLE_START, R.CYCLE_END).map((t) => t.name);
+  check("cycle-window", JSON.stringify(cyc) === JSON.stringify(["May 17", "Oct 18"])); }
 check("since-oct", R.monthsAgoIso(noon, 6) === "2026-04-20");
 check("since-clamp", R.monthsAgoIso(new Date("2026-03-31T12:00:00-07:00"), 6) === "2025-09-30");
 check("since-year", R.monthsAgoIso(new Date("2027-01-15T20:00:00Z"), 6) === "2026-07-15");
@@ -329,7 +331,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="rules-")
     os.chmod(tmp, 0o700)
     try:
-        proc = subprocess.run(["node", "-e", NODE, os.path.join(ROOT, "assets", "roll.6.js"), tmp],
+        proc = subprocess.run(["node", "-e", NODE, os.path.join(ROOT, "assets", "roll.7.js"), tmp],
                               cwd=ROOT, capture_output=True, text=True)
         if proc.returncode != 0:
             sys.stderr.write(proc.stderr[-1000:])

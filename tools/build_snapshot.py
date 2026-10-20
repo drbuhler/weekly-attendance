@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--xlsx", help="use this local .xlsx instead of downloading the published sheet")
     ap.add_argument("-o", "--out", default=os.path.join(ROOT, "data.enc.json"))
     ap.add_argument("--title", default="Catechumen attendance")
-    ap.add_argument("--weeks", type=int, default=8)
+    ap.add_argument("--weeks", type=int, default=0)  # 0 = whole catechism cycle (see export_weekly_tabs.py)
     ap.add_argument("--now", help="pretend the current time is this ISO date-time (testing)")
     ap.add_argument("--iterations", type=int, default=be.DEFAULT_ITER)
     ap.add_argument("--overrides", default=os.environ.get("ATTENDANCE_OVERRIDES", DEFAULT_OVERRIDES),

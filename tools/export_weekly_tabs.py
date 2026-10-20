@@ -23,8 +23,8 @@ Weekly tabs are sheets named like "Oct 4" / "Sept 20" / "July5". By default the 
 have "happened" are used: a tab counts from 12:00 PM Pacific on its own date (check-ins finish
 around 11:30 AM), so future tabs and today's tab before noon are ignored entirely. Override with
 --now (an ISO date-time), --through YYYY-MM-DD (inclusive), --weeks N, or --tabs ...
-The live page (assets/roll.6.js) uses the same noon rule but a six-month date window instead of
-this default of 8, and it does not read --weeks from the encrypted snapshot.
+The live page (assets/roll.7.js) uses the same noon rule and the same cycle window
+(CYCLE_START..CYCLE_END) by default, and it does not read --weeks from the encrypted snapshot.
 The attendance CSV holds real names: keep it outside the repo (the script refuses otherwise).
 """
 import argparse, csv, datetime as dt, os, re, sys
@@ -39,6 +39,10 @@ MONTHS = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7,
           "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
 PACIFIC = ZoneInfo("America/Los_Angeles")
 CUTOFF_HOUR = 12
+# Catechism cycle (keep in step with CYCLE_START / CYCLE_END in assets/roll.N.js).
+# NEXT CYCLE: set the first class tab date and Orthodox Pascha, then rebuild data.enc.json.
+CYCLE_START = dt.date(2026, 5, 17)
+CYCLE_END = dt.date(2027, 5, 2)   # Pascha 2027; no April class
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
@@ -79,7 +83,7 @@ def main():
     ap.add_argument("out_csv")
     ap.add_argument("--visitors-out", help="visitor-count file (default: <out_csv>.visitors.csv)")
     ap.add_argument("--markers-out", help="names marked Baptized in column D of the newest tab (default: <out_csv>.baptized.csv)")
-    ap.add_argument("--weeks", type=int, default=8)
+    ap.add_argument("--weeks", type=int, default=0, help="keep only the latest N tabs; 0 (default) = the whole cycle CYCLE_START..CYCLE_END")
     ap.add_argument("--through", help="last tab date to include, inclusive (overrides the noon rule)")
     ap.add_argument("--now", help="pretend the current time is this ISO date-time (for testing)")
     ap.add_argument("--tabs", nargs="+", help="explicit tab names, in order (overrides --weeks)")
@@ -105,7 +109,10 @@ def main():
         tabs = args.tabs
     else:
         dated = sorted((d, n) for n in wb.sheetnames if (d := tab_date(n, today)) and d <= through)
-        tabs = [n for _, n in dated[-args.weeks:]]
+        if args.weeks:
+            tabs = [n for _, n in dated[-args.weeks:]]
+        else:
+            tabs = [n for d, n in dated if CYCLE_START <= d <= CYCLE_END]
     if not tabs:
         sys.exit("No weekly tabs found.")
 
