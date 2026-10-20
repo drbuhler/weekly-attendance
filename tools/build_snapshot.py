@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--xlsx", help="use this local .xlsx instead of downloading the published sheet")
     ap.add_argument("-o", "--out", default=os.path.join(ROOT, "data.enc.json"))
     ap.add_argument("--title", default="Catechumen attendance")
-    ap.add_argument("--weeks", type=int, default=8)
+    ap.add_argument("--weeks", type=int, default=0)  # 0 = whole catechism cycle (see export_weekly_tabs.py)
     ap.add_argument("--now", help="pretend the current time is this ISO date-time (testing)")
     ap.add_argument("--iterations", type=int, default=be.DEFAULT_ITER)
     ap.add_argument("--overrides", default=os.environ.get("ATTENDANCE_OVERRIDES", DEFAULT_OVERRIDES),
@@ -121,6 +121,9 @@ def main():
         archive = archive_rows(xlsx)
         # optional hand-kept 'Follow-ups' tab (Name | Follow up action taken | Date | Note); None if absent
         followups = archive_rows(xlsx, lambda n: re.fullmatch(r"\s*follow[\s-]*ups?\s*", n, re.I) is not None) or None
+        # optional hand-kept 'Baptized' tab (Name | Baptized date); None if absent. The live page
+        # reads this tab itself; it is stored here only so a future fallback snapshot can too.
+        baptized = archive_rows(xlsx, lambda n: re.fullmatch(r"\s*baptized\s*", n, re.I) is not None) or None
         # older attendance (master grids, summer tabs, weekly tabs) for "Last seen <Mon YYYY>"
         wb = openpyxl.load_workbook(xlsx, data_only=True, read_only=True)
         roster = [p["n"] for p in people if p["w"][-1] in "PA"]
@@ -133,7 +136,7 @@ def main():
 
     payload = {"v": 1, "title": args.title, "banner": "",
                "generated": dt.datetime.now().astimezone().isoformat(timespec="minutes"),
-               "weeks": weeks, "people": people, "archive": archive, "followups": followups, "older": older, "overrides": ov_block,
+               "weeks": weeks, "people": people, "archive": archive, "followups": followups, "baptized": baptized, "older": older, "overrides": ov_block,
                "live": {"pub": base, "weeks": args.weeks}}
     blob = be.encrypt(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
                       passcode, args.iterations)
